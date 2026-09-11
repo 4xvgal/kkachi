@@ -1,0 +1,58 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-kkachi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kkachi}
+      POSTGRES_DB: ${POSTGRES_DB:-kkachi}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kkachi} -d ${POSTGRES_DB:-kkachi}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  server:
+    build: .
+    image: kkachi-server
+    ports:
+      - "${HOST_PORT:-8787}:${PORT:-8787}"
+    environment:
+      PORT: ${PORT:-8787}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      RELAYS: ${RELAYS:-ws://host.docker.internal:4444/relay}
+      RELAY_TIMEOUT_MS: ${RELAY_TIMEOUT_MS:-10000}
+      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-kkachi}:${POSTGRES_PASSWORD:-kkachi}@postgres:5432/${POSTGRES_DB:-kkachi}}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:?set VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:?set VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@localhost}
+      POLL_BASE_MS: ${POLL_BASE_MS:-60000}
+      POLL_SPREAD_MS: ${POLL_SPREAD_MS:-15000}
+      POLL_LOOKBACK_SEC: ${POLL_LOOKBACK_SEC:-176400}
+      POLL_LIMIT: ${POLL_LIMIT:-500}
+      POLL_MAX_PAGES: ${POLL_MAX_PAGES:-10}
+      MAX_P_TAGS: ${MAX_P_TAGS:-10}
+      AUTH_MAX_SKEW_SEC: ${AUTH_MAX_SKEW_SEC:-60}
+      PUSH_RATE_BURST: ${PUSH_RATE_BURST:-5}
+      PUSH_RATE_REFILL_PER_MIN: ${PUSH_RATE_REFILL_PER_MIN:-5}
+      API_RATE_BURST: ${API_RATE_BURST:-10}
+      API_RATE_REFILL_PER_MIN: ${API_RATE_REFILL_PER_MIN:-10}
+      MAX_SUBS: ${MAX_SUBS:-10000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - "fetch('http://localhost:'+(process.env.PORT||8787)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  pgdata:

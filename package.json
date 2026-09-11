@@ -1,0 +1,26 @@
+{
+  "name": "kkachi-monorepo",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "workspaces": [
+    "server",
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "test:unit": "bun test",
+    "test:relay": "bun run server/scripts/relay-test.ts",
+    "test:smoke": "bun run server/scripts/smoke.ts",
+    "test:docker": "bash scripts/docker-test.sh",
+    "test:postgres": "bash scripts/postgres-test.sh",
+    "typecheck": "tsc --noEmit",
+    "server": "bun run server/src/server.ts",
+    "core:selfcheck": "bun run server/src/core.selfcheck.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "name": "kkachi",
+  "version": "0.0.1",
+  "description": "Blind Web Push client SDK for Nostr gift-wrap (kind:1059) notifications",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./protocol": "./src/protocol.ts",
+    "./inbox-key": "./src/inbox-key.ts",
+    "./register": "./src/register.ts"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "keywords": [
+    "nostr",
+    "nip-98",
+    "nip-59",
+    "web-push",
+    "push-notifications",
+    "pwa"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/4xvgal/kkachi.git",
+    "directory": "packages/push-client"
+  },
+  "homepage": "https://github.com/4xvgal/kkachi#readme",
+  "bugs": "https://github.com/4xvgal/kkachi/issues",
+  "dependencies": {
+    "nostr-tools": "^2.25.2"
+  }
+}
