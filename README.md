@@ -90,6 +90,37 @@ bun run test:postgres    # Postgres Store contract against a throwaway container
 bun run test:docker      # docker compose up (postgres+server) + SDK end-to-end smoke
 ```
 
+## PWA demo (local browser push)
+
+A minimal browser app is in `examples/pwa/`. It derives an epoch inbox key,
+subscribes to Web Push, and registers with the server via the SDK.
+
+```bash
+# terminal 1: server, allowing the demo origin
+CORS_ORIGIN=http://localhost:5173 bun run server
+
+# terminal 2: bundle + serve the demo
+bun run pwa               # http://localhost:5173
+
+# optional, to see pushes actually land: run a relay too
+npx fonstr 4444           # and set RELAYS=ws://localhost:4444/relay in .env
+```
+
+Open http://localhost:5173 → "Enable notifications" → then **"Send test event
+to me"** publishes a kind:1059 gift-wrap to this device's inbox, the poller
+matches it, and a notification should appear. `localhost` is a secure context,
+so Web Push works without TLS. The demo is a TypeScript workspace package
+(`examples/pwa`) but is excluded from `tsc`.
+
+```bash
+# fast polling so you don't wait 60s (relay URL comes from RELAYS)
+POLL_BASE_MS=5000 RELAYS=ws://localhost:4444/relay CORS_ORIGIN=http://localhost:5173 bun run server
+npx fonstr 4444
+bun run pwa
+```
+
+Prefer the CLI? `bun run examples/pwa/send.ts <inboxPub>` does the same publish.
+
 ## License
 
 [MIT](./LICENSE)

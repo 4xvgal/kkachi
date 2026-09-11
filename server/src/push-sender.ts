@@ -18,11 +18,21 @@ export class PushGoneError extends Error {
 
 export type PushSender = (sub: PushMaterial, payload: string) => Promise<void>
 
-export function createWebPushSender(vapid: VapidConfig): PushSender {
+/** Injected for tests; defaults to web-push's real sender. */
+export type WebPushSend = (
+  subscription: PushMaterial,
+  payload: string,
+  options: Record<string, unknown>,
+) => Promise<unknown>
+
+export function createWebPushSender(
+  vapid: VapidConfig,
+  send: WebPushSend = webpush.sendNotification as unknown as WebPushSend,
+): PushSender {
   webpush.setVapidDetails(vapid.subject, vapid.publicKey, vapid.privateKey)
   return async (sub, payload) => {
     try {
-      await webpush.sendNotification(sub, payload, { TTL: 60, urgency: 'normal' })
+      await send(sub, payload, { TTL: 60, urgency: 'normal' })
     } catch (err) {
       const status = (err as { statusCode?: number }).statusCode
       if (status === 404 || status === 410) throw new PushGoneError(sub.endpoint)

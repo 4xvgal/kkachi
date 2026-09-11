@@ -14,6 +14,8 @@ export type Config = {
   port: number
   /** Public origin used to canonicalize NIP-98 `u` when behind a proxy. */
   publicUrl?: string
+  /** CORS origin allowed to call the API from a browser (the PWA origin). Empty = no CORS. */
+  corsOrigin?: string
   relays: string[]
   vapid: VapidConfig
   /** Persistence: undefined = in-memory, `sqlite:...` = SQLite, `postgres://` = Postgres. */
@@ -58,14 +60,19 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     subject: env.VAPID_SUBJECT ?? 'mailto:admin@localhost',
   }
   const relays = splitList(env.RELAYS)
+  const pollBaseMs = Number(env.POLL_BASE_MS ?? 60_000)
+  // spread must not exceed base, or jitter goes negative (setTimeout clamps to
+  // 1ms -> tight polling loop).
+  const pollSpreadMs = Math.min(Number(env.POLL_SPREAD_MS ?? 15_000), pollBaseMs)
   return {
     port: Number(env.PORT ?? 8787),
     publicUrl: env.PUBLIC_URL,
+    corsOrigin: env.CORS_ORIGIN || undefined,
     relays: relays.length > 0 ? relays : ['ws://localhost:4444/relay'],
     vapid,
     databaseUrl: env.DATABASE_URL,
-    pollBaseMs: Number(env.POLL_BASE_MS ?? 60_000),
-    pollSpreadMs: Number(env.POLL_SPREAD_MS ?? 15_000),
+    pollBaseMs,
+    pollSpreadMs,
     pollLookbackSec: Number(env.POLL_LOOKBACK_SEC ?? TWO_DAYS_SEC + 3600),
     pollLimit: Number(env.POLL_LIMIT ?? 500),
     pollMaxPages: Number(env.POLL_MAX_PAGES ?? 10),

@@ -147,16 +147,19 @@ export function createPoller(deps: PollerDeps) {
       }
     }
 
+    if (pushed > 0) console.log(`[poller] pushed ${pushed}/${targets.length}`)
+
     return { scanned: events.length, fresh: fresh.length, targets: targets.length, pushed, rateLimited }
   }
 
   function schedule(): void {
     if (!running) return
+    const delay = Math.max(250, jitter(random(), config.pollBaseMs, config.pollSpreadMs))
     timer = setTimeout(() => {
       void tick()
         .catch(onError)
         .finally(schedule)
-    }, jitter(random(), config.pollBaseMs, config.pollSpreadMs))
+    }, delay)
   }
 
   return {

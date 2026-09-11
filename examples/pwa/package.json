@@ -1,0 +1,13 @@
+{
+  "name": "kkachi-pwa-demo",
+  "version": "0.0.2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run dev.ts"
+  },
+  "dependencies": {
+    "kkachi": "workspace:*",
+    "nostr-tools": "^2.25.2"
+  }
+}

@@ -1,0 +1,117 @@
+/**
+ * Demo app: derive an epoch inbox key, subscribe to browser push, and register
+ * with the kkachi server using the SDK.
+ */
+
+import { deriveInboxPub } from 'kkachi/inbox-key'
+import { createInboxSigner, subscribe, unsubscribe } from 'kkachi/register'
+import { isPushMaterial, type PushMaterial } from 'kkachi/protocol'
+import { finalizeEvent, generateSecretKey, SimplePool } from 'nostr-tools'
+
+type DemoConfig = { serverUrl: string; vapidPublicKey: string; relayUrl: string }
+
+declare global {
+  interface Window {
+    KKACHI_CONFIG: DemoConfig
+  }
+}
+
+const EPOCH = '2026-09'
+const logEl = document.getElementById('log') as HTMLPreElement
+
+function log(message: unknown): void {
+  const line = typeof message === 'string' ? message : JSON.stringify(message)
+  logEl.textContent += `${line}\n`
+  console.log(message)
+}
+
+function urlBase64ToUint8Array(base64: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64.length % 4)) % 4)
+  const normalized = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const raw = atob(normalized)
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0))
+}
+
+/** Demo seed persisted in localStorage so the inbox is stable across reloads. */
+function getSeed(): Uint8Array {
+  const stored = localStorage.getItem('kkachi-demo-seed')
+  if (stored) return Uint8Array.from(atob(stored), (c) => c.charCodeAt(0))
+  const seed = crypto.getRandomValues(new Uint8Array(32))
+  localStorage.setItem('kkachi-demo-seed', btoa(String.fromCharCode(...seed)))
+  return seed
+}
+
+async function enable(): Promise<void> {
+  const cfg = window.KKACHI_CONFIG
+  log(`server: ${cfg.serverUrl}`)
+
+  const permission = await Notification.requestPermission()
+  log(`permission: ${permission}`)
+  if (permission !== 'granted') return
+
+  const registration = await navigator.serviceWorker.register('/sw.js')
+  await navigator.serviceWorker.ready
+
+  const seed = getSeed()
+  const signer = await createInboxSigner(seed, EPOCH)
+  log(`inboxPub: ${await deriveInboxPub(seed, EPOCH)}`)
+
+  const subscription = await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(cfg.vapidPublicKey),
+  })
+  const push = subscription.toJSON() as PushMaterial
+  if (!isPushMaterial(push)) throw new Error('unexpected push subscription shape')
+  log(`endpoint: ${push.endpoint.slice(0, 48)}…`)
+
+  const res = await subscribe(cfg.serverUrl, signer, push)
+  log(`subscribe → ${res.status} ${await res.text()}`)
+}
+
+async function disable(): Promise<void> {
+  const cfg = window.KKACHI_CONFIG
+  const signer = await createInboxSigner(getSeed(), EPOCH)
+  const res = await unsubscribe(cfg.serverUrl, signer)
+  log(`unsubscribe → ${res.status}`)
+  const registration = await navigator.serviceWorker.ready
+  const subscription = await registration.pushManager.getSubscription()
+  if (subscription) await subscription.unsubscribe()
+}
+
+/** Publish a kind:1059 gift-wrap addressed to this device's inbox. */
+async function sendToSelf(): Promise<void> {
+  const cfg = window.KKACHI_CONFIG
+  const inboxPub = await deriveInboxPub(getSeed(), EPOCH)
+  const event = finalizeEvent(
+    {
+      kind: 1059,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [['p', inboxPub]],
+      content: '',
+    },
+    generateSecretKey(),
+  )
+  log(`publishing to ${inboxPub.slice(0, 12)}… via ${cfg.relayUrl}`)
+
+  const pool = new SimplePool()
+  try {
+    const results = await Promise.allSettled(pool.publish([cfg.relayUrl], event))
+    const ok = results.filter((r) => r.status === 'fulfilled').length
+    log(`publish → ${ok}/${results.length} accepted`)
+    if (ok === 0) log(`error: relay rejected ${event.id}`)
+  } finally {
+    pool.close([])
+  }
+}
+
+document.getElementById('enable')?.addEventListener('click', () => {
+  void enable().catch((err) => log(`error: ${String(err)}`))
+})
+document.getElementById('disable')?.addEventListener('click', () => {
+  void disable().catch((err) => log(`error: ${String(err)}`))
+})
+document.getElementById('send')?.addEventListener('click', () => {
+  void sendToSelf().catch((err) => log(`error: ${String(err)}`))
+})
+
+log('ready — click "Enable notifications"')

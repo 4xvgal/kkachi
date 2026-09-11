@@ -1,12 +1,13 @@
 {
   "name": "kkachi-monorepo",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "type": "module",
   "license": "MIT",
   "workspaces": [
     "server",
-    "packages/*"
+    "packages/*",
+    "examples/*"
   ],
   "scripts": {
     "test": "bun test",
@@ -17,9 +18,13 @@
     "test:postgres": "bash scripts/postgres-test.sh",
     "typecheck": "tsc --noEmit",
     "server": "bun run server/src/server.ts",
+    "pwa": "bun run examples/pwa/dev.ts",
+    "changeset": "changeset",
+    "version": "changeset version",
     "core:selfcheck": "bun run server/src/core.selfcheck.ts"
   },
   "devDependencies": {
+    "@changesets/cli": "^3.0.2",
     "@types/bun": "latest",
     "typescript": "5.9.3"
   }

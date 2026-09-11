@@ -25,6 +25,12 @@ describe('loadConfig (.env driven)', () => {
     expect(c.databaseUrl).toBe('sqlite::memory:')
   })
 
+  test('caps poll spread at base (no negative jitter)', () => {
+    const c = loadConfig({ POLL_BASE_MS: '5000', POLL_SPREAD_MS: '15000' })
+    expect(c.pollBaseMs).toBe(5000)
+    expect(c.pollSpreadMs).toBe(5000)
+  })
+
   test('applies defaults when env is empty', () => {
     const c = loadConfig({})
     expect(c.port).toBe(8787)

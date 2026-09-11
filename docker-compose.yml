@@ -22,6 +22,7 @@ services:
     environment:
       PORT: ${PORT:-8787}
       PUBLIC_URL: ${PUBLIC_URL:-}
+      CORS_ORIGIN: ${CORS_ORIGIN:-}
       RELAYS: ${RELAYS:-ws://host.docker.internal:4444/relay}
       RELAY_TIMEOUT_MS: ${RELAY_TIMEOUT_MS:-10000}
       DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-kkachi}:${POSTGRES_PASSWORD:-kkachi}@postgres:5432/${POSTGRES_DB:-kkachi}}

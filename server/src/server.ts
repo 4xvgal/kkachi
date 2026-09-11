@@ -111,7 +111,24 @@ export function createRequestHandler(deps: HandlerDeps): (req: Request) => Promi
     maxSubs = config.maxSubs,
   } = deps
 
-  return async function handle(req: Request): Promise<Response> {
+  const corsHeaders: Record<string, string> | null = config.corsOrigin
+    ? {
+        'access-control-allow-origin': config.corsOrigin,
+        'access-control-allow-methods': 'GET, POST, OPTIONS',
+        'access-control-allow-headers': 'authorization, content-type',
+        'access-control-max-age': '600',
+        vary: 'origin',
+      }
+    : null
+
+  function withCors(res: Response): Response {
+    if (!corsHeaders) return res
+    const headers = new Headers(res.headers)
+    for (const [k, v] of Object.entries(corsHeaders)) headers.set(k, v)
+    return new Response(res.body, { status: res.status, headers })
+  }
+
+  async function route(req: Request): Promise<Response> {
     const { pathname } = new URL(req.url)
     const nowSec = Math.floor(now() / 1000)
 
@@ -165,6 +182,13 @@ export function createRequestHandler(deps: HandlerDeps): (req: Request) => Promi
     }
 
     return json({ error: 'not found' }, 404)
+  }
+
+  return async function handle(req: Request): Promise<Response> {
+    if (req.method === 'OPTIONS' && corsHeaders) {
+      return new Response(null, { status: 204, headers: corsHeaders })
+    }
+    return withCors(await route(req))
   }
 }
 

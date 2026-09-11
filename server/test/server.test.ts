@@ -28,7 +28,7 @@ const PUSH_OTHER: PushMaterial = {
   keys: { p256dh: 'X', auth: 'Y' },
 }
 
-function config(): Config {
+function config(over: Partial<Config> = {}): Config {
   return {
     port: 0,
     relays: ['ws://relay.test'],
@@ -46,6 +46,7 @@ function config(): Config {
     apiRateBurst: 10,
     apiRateRefillPerMin: 10,
     maxSubs: 10_000,
+    ...over,
   }
 }
 
@@ -118,6 +119,27 @@ describe('GET /healthz', () => {
     const res = await handle(new Request('http://localhost/healthz'))
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ ok: true, v: 1, records: 0 })
+  })
+})
+
+describe('CORS (browser SDK)', () => {
+  test('answers preflight and sets allow-origin when configured', async () => {
+    const cors = createRequestHandler({
+      store,
+      config: config({ corsOrigin: 'http://localhost:5173' }),
+    })
+    const pre = await cors(new Request(SUB_URL, { method: 'OPTIONS' }))
+    expect(pre.status).toBe(204)
+    expect(pre.headers.get('access-control-allow-origin')).toBe('http://localhost:5173')
+    expect(pre.headers.get('access-control-allow-headers')).toContain('authorization')
+
+    const res = await cors(new Request('http://localhost/healthz'))
+    expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:5173')
+  })
+
+  test('no CORS headers when not configured', async () => {
+    const res = await handle(new Request('http://localhost/healthz'))
+    expect(res.headers.get('access-control-allow-origin')).toBeNull()
   })
 })
 
