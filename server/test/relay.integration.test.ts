@@ -27,6 +27,7 @@ function relayConfig(): Config {
     port: 0,
     relays: [RELAY_URL!],
     vapid: { publicKey: 'p', privateKey: 's', subject: 'mailto:x@y' },
+    corsOrigins: [],
     pollBaseMs: 60_000,
     pollSpreadMs: 0,
     pollLookbackSec: 2 * 24 * 60 * 60 + 3600,

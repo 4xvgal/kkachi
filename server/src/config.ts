@@ -10,12 +10,20 @@ export type VapidConfig = {
   subject: string
 }
 
+export type TlsConfig = {
+  /** PEM file paths. Enables HTTPS (needed when the PWA dev server is HTTPS: mixed content). */
+  certFile: string
+  keyFile: string
+}
+
 export type Config = {
   port: number
   /** Public origin used to canonicalize NIP-98 `u` when behind a proxy. */
   publicUrl?: string
-  /** CORS origin allowed to call the API from a browser (the PWA origin). Empty = no CORS. */
-  corsOrigin?: string
+  /** Allowed browser CORS origins (comma-separated `CORS_ORIGIN`). `*` allows any. */
+  corsOrigins: string[]
+  /** Optional TLS for local HTTPS dev. */
+  tls?: TlsConfig
   relays: string[]
   vapid: VapidConfig
   /** Persistence: undefined = in-memory, `sqlite:...` = SQLite, `postgres://` = Postgres. */
@@ -67,7 +75,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   return {
     port: Number(env.PORT ?? 8787),
     publicUrl: env.PUBLIC_URL,
-    corsOrigin: env.CORS_ORIGIN || undefined,
+    corsOrigins: splitList(env.CORS_ORIGIN),
+    tls:
+      env.TLS_CERT && env.TLS_KEY
+        ? { certFile: env.TLS_CERT, keyFile: env.TLS_KEY }
+        : undefined,
     relays: relays.length > 0 ? relays : ['ws://localhost:4444/relay'],
     vapid,
     databaseUrl: env.DATABASE_URL,

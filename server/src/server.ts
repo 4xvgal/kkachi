@@ -111,20 +111,28 @@ export function createRequestHandler(deps: HandlerDeps): (req: Request) => Promi
     maxSubs = config.maxSubs,
   } = deps
 
-  const corsHeaders: Record<string, string> | null = config.corsOrigin
-    ? {
-        'access-control-allow-origin': config.corsOrigin,
-        'access-control-allow-methods': 'GET, POST, OPTIONS',
-        'access-control-allow-headers': 'authorization, content-type',
-        'access-control-max-age': '600',
-        vary: 'origin',
-      }
-    : null
+  // CORS: ACAO accepts a single origin (or `*`), never a list. Match the
+  // request's Origin against the allowlist and echo just that one back.
+  const allowedOrigins = config.corsOrigins
 
-  function withCors(res: Response): Response {
-    if (!corsHeaders) return res
+  function corsFor(req: Request): Record<string, string> | null {
+    if (allowedOrigins.length === 0) return null
+    const origin = req.headers.get('origin')
+    if (!origin) return null
+    if (!allowedOrigins.includes('*') && !allowedOrigins.includes(origin)) return null
+    return {
+      'access-control-allow-origin': origin,
+      'access-control-allow-methods': 'GET, POST, OPTIONS',
+      'access-control-allow-headers': 'authorization, content-type',
+      'access-control-max-age': '600',
+      vary: 'origin',
+    }
+  }
+
+  function withCors(res: Response, cors: Record<string, string> | null): Response {
+    if (!cors) return res
     const headers = new Headers(res.headers)
-    for (const [k, v] of Object.entries(corsHeaders)) headers.set(k, v)
+    for (const [k, v] of Object.entries(cors)) headers.set(k, v)
     return new Response(res.body, { status: res.status, headers })
   }
 
@@ -185,10 +193,11 @@ export function createRequestHandler(deps: HandlerDeps): (req: Request) => Promi
   }
 
   return async function handle(req: Request): Promise<Response> {
-    if (req.method === 'OPTIONS' && corsHeaders) {
-      return new Response(null, { status: 204, headers: corsHeaders })
+    const cors = corsFor(req)
+    if (req.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: cors ?? {} })
     }
-    return withCors(await route(req))
+    return withCors(await route(req), cors)
   }
 }
 
@@ -201,6 +210,9 @@ export async function startServer(config: Config) {
   const poller = createPoller({ store, relayClient, sender, config })
   const server = Bun.serve({
     port: config.port,
+    ...(config.tls
+      ? { tls: { certFile: config.tls.certFile, keyFile: config.tls.keyFile } }
+      : {}),
     fetch: createRequestHandler({ store, config }),
   })
   poller.start()
@@ -225,5 +237,8 @@ if (import.meta.main) {
     process.exit(1)
   }
   const app = await startServer(config)
-  console.log(`kkachi: listening on http://localhost:${app.server.port}`)
+  // Public key is not secret (clients receive it). Logs help compare with the
+  // browser subscription's applicationServerKey on VapidPkHashMismatch.
+  console.log(`kkachi: VAPID public ${config.vapid.publicKey}`)
+  console.log(`kkachi: listening on ${config.tls ? 'https' : 'http'}://localhost:${app.server.port}`)
 }

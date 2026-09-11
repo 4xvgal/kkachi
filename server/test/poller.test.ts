@@ -29,6 +29,7 @@ function config(over: Partial<Config> = {}): Config {
     port: 0,
     relays: ['ws://relay.default'],
     vapid: { publicKey: 'p', privateKey: 's', subject: 'mailto:x@y' },
+    corsOrigins: [],
     pollBaseMs: 60_000,
     pollSpreadMs: 15_000,
     pollLookbackSec: 2 * 24 * 60 * 60,

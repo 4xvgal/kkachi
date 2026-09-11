@@ -33,6 +33,7 @@ function config(over: Partial<Config> = {}): Config {
     port: 0,
     relays: ['ws://relay.test'],
     vapid: { publicKey: 'p', privateKey: 's', subject: 'mailto:x@y' },
+    corsOrigins: [],
     pollBaseMs: 60_000,
     pollSpreadMs: 15_000,
     pollLookbackSec: 2 * 24 * 60 * 60,
@@ -123,22 +124,47 @@ describe('GET /healthz', () => {
 })
 
 describe('CORS (browser SDK)', () => {
-  test('answers preflight and sets allow-origin when configured', async () => {
-    const cors = createRequestHandler({
-      store,
-      config: config({ corsOrigin: 'http://localhost:5173' }),
-    })
-    const pre = await cors(new Request(SUB_URL, { method: 'OPTIONS' }))
-    expect(pre.status).toBe(204)
-    expect(pre.headers.get('access-control-allow-origin')).toBe('http://localhost:5173')
-    expect(pre.headers.get('access-control-allow-headers')).toContain('authorization')
+  const ALLOW = ['https://localhost:5174', 'https://ui-macmini.local:5174']
 
-    const res = await cors(new Request('http://localhost/healthz'))
-    expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:5173')
+  test('echoes the matching origin for preflight and request', async () => {
+    const cors = createRequestHandler({ store, config: config({ corsOrigins: ALLOW }) })
+    const pre = await cors(
+      new Request(SUB_URL, {
+        method: 'OPTIONS',
+        headers: { origin: 'https://ui-macmini.local:5174' },
+      }),
+    )
+    expect(pre.status).toBe(204)
+    expect(pre.headers.get('access-control-allow-origin')).toBe('https://ui-macmini.local:5174')
+    expect(pre.headers.get('access-control-allow-headers')).toContain('authorization')
+    expect(pre.headers.get('vary')).toContain('origin')
+
+    const res = await cors(
+      new Request('http://localhost/healthz', { headers: { origin: 'https://localhost:5174' } }),
+    )
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://localhost:5174')
+  })
+
+  test('does not set CORS for a disallowed origin', async () => {
+    const cors = createRequestHandler({ store, config: config({ corsOrigins: ALLOW }) })
+    const res = await cors(
+      new Request('http://localhost/healthz', { headers: { origin: 'https://evil.example' } }),
+    )
+    expect(res.headers.get('access-control-allow-origin')).toBeNull()
+  })
+
+  test('* allows any origin (still a single echoed value)', async () => {
+    const cors = createRequestHandler({ store, config: config({ corsOrigins: ['*'] }) })
+    const res = await cors(
+      new Request('http://localhost/healthz', { headers: { origin: 'https://anything.example' } }),
+    )
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://anything.example')
   })
 
   test('no CORS headers when not configured', async () => {
-    const res = await handle(new Request('http://localhost/healthz'))
+    const res = await handle(
+      new Request('http://localhost/healthz', { headers: { origin: 'https://localhost:5174' } }),
+    )
     expect(res.headers.get('access-control-allow-origin')).toBeNull()
   })
 })

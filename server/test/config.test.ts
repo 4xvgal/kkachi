@@ -13,6 +13,7 @@ describe('loadConfig (.env driven)', () => {
       POLL_MAX_PAGES: '3',
       MAX_SUBS: '5',
       DATABASE_URL: 'sqlite::memory:',
+      CORS_ORIGIN: 'https://a.example, https://b.example',
     })
     expect(c.port).toBe(9999)
     expect(c.publicUrl).toBe('https://push.example')
@@ -23,6 +24,7 @@ describe('loadConfig (.env driven)', () => {
     expect(c.pollMaxPages).toBe(3)
     expect(c.maxSubs).toBe(5)
     expect(c.databaseUrl).toBe('sqlite::memory:')
+    expect(c.corsOrigins).toEqual(['https://a.example', 'https://b.example'])
   })
 
   test('caps poll spread at base (no negative jitter)', () => {
@@ -42,5 +44,6 @@ describe('loadConfig (.env driven)', () => {
     expect(c.pollMaxPages).toBe(10)
     expect(c.maxSubs).toBe(10_000)
     expect(c.databaseUrl).toBeUndefined()
+    expect(c.corsOrigins).toEqual([])
   })
 })
