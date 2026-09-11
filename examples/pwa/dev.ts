@@ -66,4 +66,5 @@ Bun.serve({
 console.log(`[pwa] http://localhost:${port}`)
 console.log(`[pwa] server = ${serverUrl}`)
 console.log(`[pwa] relay  = ${relayUrl}`)
+console.log(`[pwa] vapid  = ${vapidPublicKey || '(unset)'}`)
 console.log(`[pwa] start the server with: CORS_ORIGIN=http://localhost:${port} bun run server`)

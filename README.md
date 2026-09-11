@@ -112,6 +112,14 @@ matches it, and a notification should appear. `localhost` is a secure context,
 so Web Push works without TLS. The demo is a TypeScript workspace package
 (`examples/pwa`) but is excluded from `tsc`.
 
+**Setting the relay.** The publish relay defaults to the first `RELAYS` entry
+(or `PWA_RELAY`), and can be changed at runtime in the page's **Relay** field
+(persisted in `localStorage`). The server must watch the same relay:
+- public `wss://` relay → the page passes it to `subscribe`, so the server polls
+  it per-subscriber (click "Enable notifications" after changing);
+- local/private relay → it must be in the server's `RELAYS` env (the SSRF guard
+  rejects private relays from the client).
+
 ```bash
 # fast polling so you don't wait 60s (relay URL comes from RELAYS)
 POLL_BASE_MS=5000 RELAYS=ws://localhost:4444/relay CORS_ORIGIN=http://localhost:5173 bun run server
