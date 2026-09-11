@@ -18,7 +18,11 @@ const encoder = new TextEncoder()
 export async function deriveInboxSecret(seed: Uint8Array, epoch: string): Promise<Uint8Array> {
   if (seed.length === 0) throw new TypeError('seed must not be empty')
   if (epoch.length === 0) throw new TypeError('epoch must not be empty')
-  const key = await crypto.subtle.importKey('raw', seed, 'HKDF', false, ['deriveBits'])
+  // `new Uint8Array(...)` yields an ArrayBuffer-backed view, which the strict
+  // DOM `BufferSource` type accepts (a bare Uint8Array is ArrayBufferLike).
+  const key = await crypto.subtle.importKey('raw', new Uint8Array(seed), 'HKDF', false, [
+    'deriveBits',
+  ])
   const bits = await crypto.subtle.deriveBits(
     {
       name: 'HKDF',

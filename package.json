@@ -1,6 +1,6 @@
 {
   "name": "kkachi-monorepo",
-  "version": "0.0.2",
+  "version": "0.0.3-rc.0",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -16,7 +16,8 @@
     "test:smoke": "bun run server/scripts/smoke.ts",
     "test:docker": "bash scripts/docker-test.sh",
     "test:postgres": "bash scripts/postgres-test.sh",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.dom.json",
+    "typecheck:dom": "tsc -p tsconfig.dom.json",
     "server": "bun run server/src/server.ts",
     "pwa": "bun run examples/pwa/dev.ts",
     "changeset": "changeset",

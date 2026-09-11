@@ -123,7 +123,9 @@ const encoder = new TextEncoder()
  * so the payload hash can never drift between them. Pure/deterministic.
  */
 export async function sha256Hex(data: string | Uint8Array): Promise<string> {
-  const bytes = typeof data === 'string' ? encoder.encode(data) : data
+  // Copy into a fresh ArrayBuffer-backed view: strict DOM `BufferSource`
+  // rejects Uint8Array<ArrayBufferLike> (could be SharedArrayBuffer).
+  const bytes = new Uint8Array(typeof data === 'string' ? encoder.encode(data) : data)
   const digest = await crypto.subtle.digest('SHA-256', bytes)
   let out = ''
   for (const b of new Uint8Array(digest)) out += b.toString(16).padStart(2, '0')
