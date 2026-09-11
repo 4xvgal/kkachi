@@ -1,13 +1,16 @@
 /**
  * [shell] Multi-relay firehose client.
  *
- * The signature deliberately accepts only firehose filters (kinds + since).
- * A `#p` filter is refused at runtime so no caller can ever create a per-user
- * REQ that would enumerate users to a hostile relay (architecture L1).
+ * - Signature accepts only firehose filters (kinds + since/until/limit). A `#p`
+ *   filter is refused at runtime so no caller can enumerate users (L1).
+ * - Queries each relay separately (isolated failures), applying NIP-11 policy:
+ *   skip auth/payment relays, clamp `limit` to the relay's `max_limit`, and
+ *   dedup events across relays.
  */
 
 import { SimplePool, verifyEvent } from 'nostr-tools'
 import type { NostrEvent } from 'kkachi/protocol'
+import { createRelayInfoCache, type RelayInfoCache } from './relay-info.ts'
 
 export type FirehoseFilter = {
   kinds: number[]
@@ -29,19 +32,53 @@ export function assertFirehose(filter: FirehoseFilter): void {
   }
 }
 
+export function clampLimit(limit?: number, max?: number): number | undefined {
+  if (limit === undefined) return max
+  if (max === undefined) return limit
+  return Math.min(limit, max)
+}
+
 export function createRelayClient(
   pool: SimplePool = new SimplePool(),
-  opts: { timeoutMs?: number } = {},
+  opts: {
+    timeoutMs?: number
+    relayInfo?: RelayInfoCache
+    onRelayError?: (relay: string, err: unknown) => void
+  } = {},
 ): RelayClient & {
   close(): void
 } {
   const maxWait = opts.timeoutMs ?? 10_000
+  const relayInfo = opts.relayInfo ?? createRelayInfoCache()
+
   return {
     async querySync(relays, filter) {
       assertFirehose(filter)
-      // maxWait bounds a slow/hung relay so one bad relay can't stall the tick.
-      const events = await pool.querySync(relays, filter, { maxWait })
-      return events.filter((ev) => verifyEvent(ev)) as unknown as NostrEvent[]
+      const byId = new Map<string, NostrEvent>()
+
+      await Promise.all(
+        relays.map(async (relay) => {
+          const policy = await relayInfo.policyFor(relay)
+          if (policy.authRequired || policy.paymentRequired) return
+
+          const perRelay: FirehoseFilter = { ...filter }
+          const limit = clampLimit(filter.limit, policy.maxLimit)
+          if (limit !== undefined) perRelay.limit = limit
+
+          try {
+            const events = await pool.querySync([relay], perRelay, { maxWait })
+            for (const event of events) {
+              if (event.id && !byId.has(event.id) && verifyEvent(event)) {
+                byId.set(event.id, event as unknown as NostrEvent)
+              }
+            }
+          } catch (err) {
+            opts.onRelayError?.(relay, err)
+          }
+        }),
+      )
+
+      return [...byId.values()]
     },
     close() {
       pool.close([])

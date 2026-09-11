@@ -13,6 +13,7 @@
     "test": "bun test",
     "test:unit": "bun test",
     "test:relay": "bun run server/scripts/relay-test.ts",
+    "relay:check": "bun run server/scripts/relay-check.ts",
     "test:smoke": "bun run server/scripts/smoke.ts",
     "test:docker": "bash scripts/docker-test.sh",
     "test:postgres": "bash scripts/postgres-test.sh",

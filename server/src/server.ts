@@ -205,7 +205,11 @@ export type RunningServer = Awaited<ReturnType<typeof startServer>>
 
 export async function startServer(config: Config) {
   const store = await createStore(config.databaseUrl)
-  const relayClient = createRelayClient(undefined, { timeoutMs: config.relayTimeoutMs })
+  const relayClient = createRelayClient(undefined, {
+    timeoutMs: config.relayTimeoutMs,
+    onRelayError: (relay, err) =>
+      console.warn(`[relay] ${relay}:`, err instanceof Error ? err.message : err),
+  })
   const sender = createWebPushSender(config.vapid)
   const poller = createPoller({ store, relayClient, sender, config })
   const server = Bun.serve({
