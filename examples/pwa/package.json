@@ -1,6 +1,6 @@
 {
   "name": "kkachi-pwa-demo",
-  "version": "0.0.3-rc.0",
+  "version": "0.0.3-rc.1",
   "private": true,
   "type": "module",
   "scripts": {
