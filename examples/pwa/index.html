@@ -20,6 +20,12 @@
     <button id="enable">Enable notifications</button>
     <button id="disable">Disable</button>
     <button id="send">Send test event to me</button>
+    <p>
+      <label>Send 1059 to <input id="target" size="44" placeholder="npub1… or 64-hex inboxPub" /></label>
+      <br />
+      <label>Relay <input id="targetRelay" size="44" placeholder="wss://relay.example" /></label>
+      <button id="sendTo">Send 1059</button>
+    </p>
     <pre id="log"></pre>
     <script src="/config.js"></script>
     <script type="module" src="/app.js"></script>

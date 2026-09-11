@@ -6,7 +6,7 @@
 import { deriveInboxPub } from 'kkachi/inbox-key'
 import { createInboxSigner, subscribe, unsubscribe } from 'kkachi/register'
 import { isAllowedRelayUrl, isPushMaterial, type PushMaterial } from 'kkachi/protocol'
-import { finalizeEvent, generateSecretKey, SimplePool } from 'nostr-tools'
+import { finalizeEvent, generateSecretKey, nip19, SimplePool } from 'nostr-tools'
 
 type DemoConfig = { serverUrl: string; vapidPublicKey: string; relayUrl: string }
 
@@ -115,21 +115,18 @@ async function disable(): Promise<void> {
   if (subscription) await subscription.unsubscribe()
 }
 
-/** Publish a kind:1059 gift-wrap addressed to this device's inbox. */
-async function sendToSelf(): Promise<void> {
-  const cfg = window.KKACHI_CONFIG
-  const relay = getRelay()
-  const inboxPub = await deriveInboxPub(getSeed(), EPOCH)
+/** Publish a content-less kind:1059 gift-wrap addressed to `target` (hex). */
+async function publishGiftWrap(target: string, relay: string): Promise<void> {
   const event = finalizeEvent(
     {
       kind: 1059,
       created_at: Math.floor(Date.now() / 1000),
-      tags: [['p', inboxPub]],
+      tags: [['p', target]],
       content: '',
     },
     generateSecretKey(),
   )
-  log(`publishing to ${inboxPub.slice(0, 12)}… via ${relay}`)
+  log(`publishing 1059 to ${target.slice(0, 12)}… via ${relay}`)
 
   const pool = new SimplePool()
   try {
@@ -142,8 +139,35 @@ async function sendToSelf(): Promise<void> {
   }
 }
 
+/** Publish to this device's inbox. */
+async function sendToSelf(): Promise<void> {
+  await publishGiftWrap(await deriveInboxPub(getSeed(), EPOCH), getRelay())
+}
+
 const relayInput = document.getElementById('relay') as HTMLInputElement | null
 if (relayInput) relayInput.value = getRelay()
+
+const targetRelayInput = document.getElementById('targetRelay') as HTMLInputElement | null
+if (targetRelayInput) targetRelayInput.value = getRelay()
+
+/** Accept a 64-hex pubkey or an npub1… string, return hex. */
+function resolvePubkey(input: string): string {
+  const value = input.trim()
+  if (/^[0-9a-fA-F]{64}$/.test(value)) return value.toLowerCase()
+  if (value.startsWith('npub1')) {
+    const decoded = nip19.decode(value)
+    if (decoded.type === 'npub') return decoded.data
+  }
+  throw new Error('target must be a 64-hex pubkey or npub1…')
+}
+
+/** Publish to a specific pubkey using the relay field. */
+async function sendToTarget(): Promise<void> {
+  const targetInput = document.getElementById('target') as HTMLInputElement | null
+  const relayField = document.getElementById('targetRelay') as HTMLInputElement | null
+  const target = resolvePubkey(targetInput?.value ?? '')
+  await publishGiftWrap(target, relayField?.value.trim() || getRelay())
+}
 
 document.getElementById('enable')?.addEventListener('click', () => {
   void enable().catch((err) => log(`error: ${String(err)}`))
@@ -153,6 +177,9 @@ document.getElementById('disable')?.addEventListener('click', () => {
 })
 document.getElementById('send')?.addEventListener('click', () => {
   void sendToSelf().catch((err) => log(`error: ${String(err)}`))
+})
+document.getElementById('sendTo')?.addEventListener('click', () => {
+  void sendToTarget().catch((err) => log(`error: ${String(err)}`))
 })
 document.getElementById('saveRelay')?.addEventListener('click', () => {
   const value = relayInput?.value.trim() ?? ''
