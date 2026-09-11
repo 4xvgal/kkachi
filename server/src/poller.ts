@@ -12,6 +12,7 @@
 import {
   buildPushPayload,
   GIFT_WRAP_KIND,
+  isAllowedRelayUrl,
   type InboxPub,
   type NostrEvent,
 } from 'kkachi/protocol'
@@ -64,11 +65,17 @@ export function createPoller(deps: PollerDeps) {
   let timer: ReturnType<typeof setTimeout> | undefined
   let running = false
 
-  /** Union of per-subscriber inbox relays, falling back to the global set. */
+  /**
+   * Union of per-subscriber relays, falling back to the global set. Client
+   * relays are accepted at registration but SSRF-filtered here, where we
+   * actually connect: private/loopback endpoints are dropped (global set is
+   * operator-trusted and used as-is).
+   */
   function relaysFor(subs: StoredSub[]): string[] {
     const set = new Set<string>()
     for (const sub of subs) {
-      const relays = sub.relays && sub.relays.length > 0 ? sub.relays : config.relays
+      const custom = (sub.relays ?? []).filter(isAllowedRelayUrl)
+      const relays = custom.length > 0 ? custom : config.relays
       for (const relay of relays) set.add(relay)
     }
     return [...set]

@@ -94,8 +94,11 @@ describe('subscribe validation', () => {
     [{ ...valid, filter: { kinds: [1], '#p': [INBOX] } }, false],
     [{ filter: { kinds: [GIFT_WRAP_KIND], '#p': [INBOX, INBOX] }, push: PUSH }, false],
     [{ filter: valid.filter, push: { endpoint: 'x', keys: {} } }, false],
-    [{ ...valid, relays: ['ws://127.0.0.1/relay'] }, false],
+    // local/private relays are accepted at registration (SSRF is checked server-side)
+    [{ ...valid, relays: ['ws://127.0.0.1/relay'] }, true],
+    [{ ...valid, relays: ['https://not-a-relay'] }, false],
     [{ ...valid, relays: [] }, false],
+    [{ ...valid, relays: Array.from({ length: 11 }, () => 'wss://r.example') }, false],
   ]
 
   test('accepts well-formed, rejects malformed/unsafe', () => {

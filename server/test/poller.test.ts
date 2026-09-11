@@ -283,6 +283,24 @@ describe('poller.tick (fixed lookback window)', () => {
       cfg: { relays: ['ws://global.example'] },
       expected: ['ws://global.example'],
     },
+    {
+      name: 'drops private/loopback client relays, falls back to global',
+      subs: [{ inbox: INBOX_A, relays: ['ws://127.0.0.1/relay', 'ws://10.0.0.1/relay'] }],
+      cfg: { relays: ['wss://global.example'] },
+      expected: ['wss://global.example'],
+    },
+    {
+      name: 'keeps only allowed client relays',
+      subs: [{ inbox: INBOX_A, relays: ['ws://127.0.0.1/relay', 'wss://ok.example'] }],
+      cfg: { relays: ['wss://global.example'] },
+      expected: ['wss://ok.example'],
+    },
+    {
+      name: 'global relays are operator-trusted (local relay allowed)',
+      subs: [{ inbox: INBOX_A }],
+      cfg: { relays: ['ws://localhost:4444/relay'] },
+      expected: ['ws://localhost:4444/relay'],
+    },
   ]
 
   test('selects relays: per-subscriber union, else global fallback', async () => {

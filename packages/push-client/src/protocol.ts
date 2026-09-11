@@ -70,9 +70,24 @@ export type SubscribeReq = {
   relays?: string[]
 }
 
+/** Max relays a single subscriber may register. */
+export const MAX_RELAYS_PER_SUB = 10
+
+/** Wire-shape check for a relay URL (scheme only). SSRF filtering is server-side. */
+export function isRelayUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  try {
+    const protocol = new URL(value).protocol
+    return protocol === 'ws:' || protocol === 'wss:'
+  } catch {
+    return false
+  }
+}
+
 /**
- * SSRF guard for operator/next-user supplied relay URLs. Only public ws(s)://
- * endpoints. Blocks loopback, private, link-local and cluster-local names.
+ * SSRF guard enforced where the server actually connects (polling), not at
+ * registration. Only public ws(s):// endpoints. Blocks loopback, private,
+ * link-local and cluster-local names.
  */
 export function isAllowedRelayUrl(value: unknown): value is string {
   if (typeof value !== 'string') return false
@@ -155,7 +170,8 @@ export function isSubscribeReq(value: unknown): value is SubscribeReq {
   if (!kindsOk || !pOk || !isPushMaterial(v.push)) return false
   if (v.relays !== undefined) {
     if (!Array.isArray(v.relays) || v.relays.length === 0) return false
-    if (!v.relays.every((r) => isAllowedRelayUrl(r))) return false
+    if (v.relays.length > MAX_RELAYS_PER_SUB) return false
+    if (!v.relays.every((r) => isRelayUrl(r))) return false
   }
   return true
 }

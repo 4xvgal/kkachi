@@ -186,6 +186,13 @@ describe('POST /push/subscribe — success', () => {
     expect((await post(handle, { body, header })).status).toBe(200)
     expect((await store.getSub(inbox))?.relays).toEqual(['wss://inbox.example'])
   })
+
+  test('accepts local/private relays at registration (SSRF filtered at poll time)', async () => {
+    const inbox = await deriveInboxPub(seed, '2026-09')
+    const { body, header } = await signBody(inbox, PUSH, ['ws://127.0.0.1/relay'])
+    expect((await post(handle, { body, header })).status).toBe(200)
+    expect((await store.getSub(inbox))?.relays).toEqual(['ws://127.0.0.1/relay'])
+  })
 })
 
 describe('POST /push/subscribe — rejections', () => {
@@ -196,9 +203,9 @@ describe('POST /push/subscribe — rejections', () => {
       make: () => signBody(OTHER),
     },
     {
-      name: 'private/loopback relay url (SSRF)',
+      name: 'non-ws relay url',
       status: 400,
-      make: async () => signBody(await deriveInboxPub(seed, '2026-09'), PUSH, ['ws://127.0.0.1/relay']),
+      make: async () => signBody(await deriveInboxPub(seed, '2026-09'), PUSH, ['https://not-a-relay']),
     },
     {
       name: 'tampered body (payload hash mismatch)',
