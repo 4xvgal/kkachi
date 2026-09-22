@@ -43,7 +43,7 @@ full list (port, `PUBLIC_URL`, relays, polling window, rate limits, DB, VAPID).
 
 | Method | Path                | Body / auth                                             |
 | ------ | ------------------- | ------------------------------------------------------- |
-| POST   | `/push/subscribe`   | NIP-98 + `{ filter, push, relays? }`                    |
+| POST   | `/push/subscribe`   | NIP-98 + `{ filter, push, relays?, message? }`          |
 | POST   | `/push/unsubscribe` | NIP-98 (signer = inboxPub)                              |
 | GET    | `/healthz`          | —                                                       |
 
@@ -51,7 +51,8 @@ full list (port, `PUBLIC_URL`, relays, polling window, rate limits, DB, VAPID).
 
 ```ts
 import { createInboxSigner, subscribe, unsubscribe } from 'kkachi/register'
-import { deriveInboxPub } from 'kkachi/inbox-key'
+import { deriveInboxPub, deriveLabelSalt, labelToken } from 'kkachi/inbox-key'
+import { resolveLabel } from 'kkachi/protocol'
 import type { PushMaterial } from 'kkachi/protocol'
 
 const epoch = '2026-09' // rotate monthly
@@ -59,11 +60,21 @@ const signer = await createInboxSigner(walletSeed, epoch) // secretKey stays on 
 // hand signer.inboxPub to senders (they put it in the gift-wrap `#p`)
 
 const push = (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey })).toJSON() as PushMaterial
-await subscribe('https://push.example', signer, push, ['wss://inbox.example'])
+await subscribe('https://push.example', signer, push, { relays: ['wss://inbox.example'] })
+
+// Register a client-chosen push message (opaque to the server): plaintext…
+await subscribe('https://push.example', signer, push, { message: '입출금' })
+// …or an obfuscated token (B scheme): seed-derived salt, same token on every
+// device sharing the seed — receiver resolves by recomputation, no map sync
+const token = await labelToken(walletSeed, '입출금')
+await subscribe('https://push.example', signer, push, { message: token })
+// receiver side: resolveLabel(await deriveLabelSalt(seed), token, ['입출금', …])
 ```
 
 `subscribe`/`unsubscribe` retry network failures with per-attempt timeout and
-re-sign NIP-98 each attempt. Receiving/decrypting is the client's job, not the SDK's.
+re-sign NIP-98 each attempt. The registered `message` is forwarded verbatim in
+the push payload (`{ v: 2, m }`); obfuscation is the client's choice — the
+server never interprets it. Receiving/decrypting is the client's job, not the SDK's.
 
 ## Deployment (Docker + Postgres)
 

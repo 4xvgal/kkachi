@@ -12,6 +12,7 @@ type SubRow = {
   filter: string
   push: string
   relays: string | null
+  message: string | null
   created_at: number | string
 }
 
@@ -23,6 +24,7 @@ function rowToSub(row: SubRow): StoredSub {
     createdAt: Number(row.created_at),
   }
   if (row.relays) sub.relays = JSON.parse(row.relays)
+  if (row.message) sub.message = row.message
   return sub
 }
 
@@ -33,6 +35,7 @@ export async function createSqlStore(driver: SqlDriver): Promise<Store> {
        filter TEXT NOT NULL,
        push TEXT NOT NULL,
        relays TEXT,
+       message TEXT,
        created_at BIGINT NOT NULL
      )`,
   )
@@ -48,23 +51,30 @@ export async function createSqlStore(driver: SqlDriver): Promise<Store> {
   } catch {
     // fresh table, or already migrated
   }
+  try {
+    await driver.run(`ALTER TABLE subscriptions ADD COLUMN message TEXT`)
+  } catch {
+    // fresh table, or already migrated
+  }
   await driver.run(`CREATE INDEX IF NOT EXISTS seen_events_seen_at ON seen_events (seen_at)`)
 
   return {
     async upsertSub(sub) {
       await driver.run(
-        `INSERT INTO subscriptions (inbox_pub, filter, push, relays, created_at)
-         VALUES (?, ?, ?, ?, ?)
+        `INSERT INTO subscriptions (inbox_pub, filter, push, relays, message, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (inbox_pub) DO UPDATE SET
            filter = excluded.filter,
            push = excluded.push,
            relays = excluded.relays,
+           message = excluded.message,
            created_at = excluded.created_at`,
         [
           sub.inboxPub,
           JSON.stringify(sub.filter),
           JSON.stringify(sub.push),
           sub.relays ? JSON.stringify(sub.relays) : null,
+          sub.message ?? null,
           sub.createdAt,
         ],
       )

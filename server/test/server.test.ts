@@ -77,11 +77,11 @@ function post(
 async function signBody(
   inboxPub: InboxPub,
   push: PushMaterial = PUSH,
-  relays?: string[],
+  opts?: { relays?: string[]; message?: string },
   epoch = '2026-09',
 ): Promise<{ body: string; header: string }> {
   const signer = await createInboxSigner(seed, epoch)
-  const body = JSON.stringify(buildSubscribeReq(inboxPub, push, relays))
+  const body = JSON.stringify(buildSubscribeReq(inboxPub, push, opts))
   const header = await nip98Header(signer, SUB_URL, 'POST', body)
   return { body, header }
 }
@@ -120,7 +120,7 @@ describe('GET /healthz', () => {
   test('reports ok and record count without auth', async () => {
     const res = await handle(new Request('http://localhost/healthz'))
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true, v: 1, records: 0 })
+    expect(await res.json()).toEqual({ ok: true, v: 2, records: 0 })
   })
 })
 
@@ -183,14 +183,21 @@ describe('POST /push/subscribe — success', () => {
 
   test('stores per-subscriber inbox relays', async () => {
     const inbox = await deriveInboxPub(seed, '2026-09')
-    const { body, header } = await signBody(inbox, PUSH, ['wss://inbox.example'])
+    const { body, header } = await signBody(inbox, PUSH, { relays: ['wss://inbox.example'] })
     expect((await post(handle, { body, header })).status).toBe(200)
     expect((await store.getSub(inbox))?.relays).toEqual(['wss://inbox.example'])
   })
 
+  test('stores the registered push message', async () => {
+    const inbox = await deriveInboxPub(seed, '2026-09')
+    const { body, header } = await signBody(inbox, PUSH, { message: '입출금' })
+    expect((await post(handle, { body, header })).status).toBe(200)
+    expect((await store.getSub(inbox))?.message).toBe('입출금')
+  })
+
   test('accepts local/private relays at registration (SSRF filtered at poll time)', async () => {
     const inbox = await deriveInboxPub(seed, '2026-09')
-    const { body, header } = await signBody(inbox, PUSH, ['ws://127.0.0.1/relay'])
+    const { body, header } = await signBody(inbox, PUSH, { relays: ['ws://127.0.0.1/relay'] })
     expect((await post(handle, { body, header })).status).toBe(200)
     expect((await store.getSub(inbox))?.relays).toEqual(['ws://127.0.0.1/relay'])
   })
@@ -206,7 +213,14 @@ describe('POST /push/subscribe — rejections', () => {
     {
       name: 'non-ws relay url',
       status: 400,
-      make: async () => signBody(await deriveInboxPub(seed, '2026-09'), PUSH, ['https://not-a-relay']),
+      make: async () =>
+        signBody(await deriveInboxPub(seed, '2026-09'), PUSH, { relays: ['https://not-a-relay'] }),
+    },
+    {
+      name: 'oversized message',
+      status: 400,
+      make: async () =>
+        signBody(await deriveInboxPub(seed, '2026-09'), PUSH, { message: 'x'.repeat(129) }),
     },
     {
       name: 'tampered body (payload hash mismatch)',

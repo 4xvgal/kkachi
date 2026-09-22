@@ -5,7 +5,7 @@
  * with `import type` so no SDK runtime code leaks into the poller/server.
  */
 
-export const PROTOCOL_VERSION = 1 as const
+export const PROTOCOL_VERSION = 2 as const
 
 /** NIP-59 gift-wrap event kind. The only kind the poller ever reads. */
 export const GIFT_WRAP_KIND = 1059 as const
@@ -46,6 +46,21 @@ export type NostrEvent = {
   sig: string
 }
 
+/**
+ * Client-registered push message. Opaque to the server: the client may register
+ * plaintext or an obfuscated/hashed form of its own choosing; the server stores
+ * and forwards it verbatim without interpreting it.
+ */
+export type PushMessage = string
+
+/** Max encoded byte length of a registered push message (push size / abuse gate). */
+export const MAX_PUSH_MESSAGE_BYTES = 128
+
+export function isPushMessage(value: unknown): value is PushMessage {
+  if (typeof value !== 'string' || value.length === 0) return false
+  return new TextEncoder().encode(value).byteLength <= MAX_PUSH_MESSAGE_BYTES
+}
+
 /** Client registration filter. Always exactly one kind and one inbox. */
 export type Filter = {
   kinds: [typeof GIFT_WRAP_KIND]
@@ -68,6 +83,8 @@ export type SubscribeReq = {
   filter: Filter
   push: PushMaterial
   relays?: string[]
+  /** Client-registered push message; forwarded verbatim on match. */
+  message?: PushMessage
 }
 
 /** Max relays a single subscriber may register. */
@@ -110,8 +127,12 @@ export function isAllowedRelayUrl(value: unknown): value is string {
   return true
 }
 
-/** Content-less push payload. The only payload the server can ever build. */
-export type PushPayload = { v: typeof PROTOCOL_VERSION }
+/**
+ * Push payload. The server carries the subscriber's registered message (`m`)
+ * verbatim; absent `m` degenerates to the content-less v1 behavior. No other
+ * content fields are representable.
+ */
+export type PushPayload = { v: typeof PROTOCOL_VERSION; m?: PushMessage }
 
 export function buildFilter(inboxPub: InboxPub): Filter {
   return { kinds: [GIFT_WRAP_KIND], '#p': [inboxPub] }
@@ -120,15 +141,35 @@ export function buildFilter(inboxPub: InboxPub): Filter {
 export function buildSubscribeReq(
   inboxPub: InboxPub,
   push: PushMaterial,
-  relays?: string[],
+  opts?: { relays?: string[]; message?: PushMessage },
 ): SubscribeReq {
   const req: SubscribeReq = { filter: buildFilter(inboxPub), push }
-  if (relays && relays.length > 0) req.relays = relays
+  if (opts?.relays && opts.relays.length > 0) req.relays = opts.relays
+  if (opts?.message !== undefined) req.message = opts.message
   return req
 }
 
-export function buildPushPayload(): PushPayload {
-  return { v: PROTOCOL_VERSION }
+export function buildPushPayload(message?: PushMessage): PushPayload {
+  return message === undefined ? { v: PROTOCOL_VERSION } : { v: PROTOCOL_VERSION, m: message }
+}
+
+/**
+ * Service-worker side: parse a received push payload (string or raw bytes, as
+ * delivered by the push event) into a PushPayload. Malformed/legacy payloads
+ * degrade to `{ v: PROTOCOL_VERSION }` so a receiver always has a shape to
+ * render.
+ */
+export function decodePushPayload(data: string | ArrayBuffer): PushPayload {
+  const text =
+    typeof data === 'string' ? data : new TextDecoder().decode(new Uint8Array(data))
+  try {
+    const parsed = JSON.parse(text) as { v?: unknown; m?: unknown }
+    const m = typeof parsed.m === 'string' && isPushMessage(parsed.m) ? parsed.m : undefined
+    // `v` from the wire is informational only; the receiver renders `m`.
+    return m === undefined ? { v: PROTOCOL_VERSION } : { v: PROTOCOL_VERSION, m }
+  } catch {
+    return { v: PROTOCOL_VERSION }
+  }
 }
 
 const encoder = new TextEncoder()
@@ -168,10 +209,40 @@ export function isSubscribeReq(value: unknown): value is SubscribeReq {
   const kindsOk = Array.isArray(kinds) && kinds.length === 1 && kinds[0] === GIFT_WRAP_KIND
   const pOk = Array.isArray(p) && p.length === 1 && isInboxPub(p[0])
   if (!kindsOk || !pOk || !isPushMaterial(v.push)) return false
+  if (v.message !== undefined && !isPushMessage(v.message)) return false
   if (v.relays !== undefined) {
     if (!Array.isArray(v.relays) || v.relays.length === 0) return false
     if (v.relays.length > MAX_RELAYS_PER_SUB) return false
     if (!v.relays.every((r) => isRelayUrl(r))) return false
   }
   return true
+}
+
+/**
+ * Deterministic label obfuscation: `base64url(sha256(salt ‖ text))[:16B]`.
+ * Client responsibility — the server accepts the result as an opaque
+ * `PushMessage` and never sees `text`. `salt` must be an app-wide constant so
+ * every device of the app derives the same token.
+ */
+export async function hashLabel(salt: string, text: string): Promise<string> {
+  const bytes = new Uint8Array(encoder.encode(`${salt}\u0000${text}`))
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  let binary = ''
+  for (const b of new Uint8Array(digest).slice(0, 16)) binary += String.fromCharCode(b)
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+/**
+ * Receiver-side resolution (B scheme): recompute the token for every candidate
+ * and return the first match. Candidates are the app's finite known labels
+ * (categories); plaintext never travels — only the matched candidate comes back.
+ */
+export async function resolveLabel(
+  salt: string,
+  token: string,
+  candidates: readonly string[],
+): Promise<string | undefined> {
+  const tokens = await Promise.all(candidates.map((c) => hashLabel(salt, c)))
+  const index = tokens.indexOf(token)
+  return index === -1 ? undefined : candidates[index]
 }

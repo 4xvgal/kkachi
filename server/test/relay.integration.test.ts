@@ -7,7 +7,12 @@
 
 import { test, expect } from 'bun:test'
 import { finalizeEvent, generateSecretKey, SimplePool } from 'nostr-tools'
-import { GIFT_WRAP_KIND, type InboxPub, type PushMaterial } from 'kkachi/protocol'
+import {
+  buildPushPayload,
+  GIFT_WRAP_KIND,
+  type InboxPub,
+  type PushMaterial,
+} from 'kkachi/protocol'
 import { deriveInboxPub } from 'kkachi/inbox-key'
 import { createMemoryStore } from '../src/store.ts'
 import { createRelayClient } from '../src/relay-client.ts'
@@ -98,7 +103,37 @@ run('poller delivers a push for a gift-wrap addressed to an active inbox', async
   const res = await poller.tick()
 
   expect(res.pushed).toBe(1)
-  expect(payloads).toEqual([JSON.stringify({ v: 1 })])
+  expect(payloads).toEqual([JSON.stringify(buildPushPayload())])
+})
+
+run('carries the subscriber-registered message in the push payload', async () => {
+  const seed = new Uint8Array(32).map((_, i) => (i * 7 + 3) % 256)
+  const inbox = await deriveInboxPub(seed, '2026-09')
+
+  const store = createMemoryStore()
+  await store.upsertSub({
+    inboxPub: inbox,
+    filter: { kinds: [GIFT_WRAP_KIND], '#p': [inbox] },
+    push: PUSH,
+    message: '입출금',
+    createdAt: 0,
+  })
+
+  const payloads: string[] = []
+  const poller = createPoller({
+    store,
+    relayClient: createRelayClient(),
+    sender: async (_push, payload) => {
+      payloads.push(payload)
+    },
+    config: relayConfig(),
+  })
+
+  await publishGiftWrap(inbox)
+  const res = await poller.tick()
+
+  expect(res.pushed).toBe(1)
+  expect(payloads).toEqual([JSON.stringify(buildPushPayload('입출금'))])
 })
 
 run('poller ignores a gift-wrap addressed to a non-active inbox', async () => {

@@ -3,7 +3,7 @@
  * with the kkachi server using the SDK.
  */
 
-import { deriveInboxPub } from 'kkachi/inbox-key'
+import { deriveInboxPub, labelToken } from 'kkachi/inbox-key'
 import { createInboxSigner, subscribe, unsubscribe } from 'kkachi/register'
 import { isAllowedRelayUrl, isPushMaterial, type PushMaterial } from 'kkachi/protocol'
 import { finalizeEvent, generateSecretKey, nip19, SimplePool } from 'nostr-tools'
@@ -26,17 +26,34 @@ declare global {
 const EPOCH = '2026-09'
 const logEl = document.getElementById('log') as HTMLPreElement
 
+const LABEL_MAP_KEY = 'kkachi-label-map'
+
+/**
+ * Persist the token→text map (hash path) and hand it to the service worker so
+ * it can resolve an obfuscated push message back to the registered text.
+ */
+function syncLabelMap(labels: Record<string, string>): void {
+  localStorage.setItem(LABEL_MAP_KEY, JSON.stringify(labels))
+  void navigator.serviceWorker.ready.then((reg) =>
+    reg.active?.postMessage({ type: 'kkachi-labels', labels }),
+  )
+}
+
 function log(message: unknown): void {
   const line = typeof message === 'string' ? message : JSON.stringify(message)
   logEl.textContent += `${line}\n`
   console.log(message)
 }
 
-function urlBase64ToUint8Array(base64: string): Uint8Array {
+function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4)
   const normalized = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/')
   const raw = atob(normalized)
-  return Uint8Array.from(raw, (c) => c.charCodeAt(0))
+  // Fresh ArrayBuffer-backed view: strict DOM `BufferSource` rejects
+  // Uint8Array<ArrayBufferLike> (could be SharedArrayBuffer).
+  const bytes = new Uint8Array(raw.length)
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i)
+  return bytes
 }
 
 function toBase64Url(bytes: Uint8Array): string {
@@ -101,7 +118,35 @@ async function enable(): Promise<void> {
   const relays = isAllowedRelayUrl(relay) ? [relay] : undefined
   log(relays ? `relay: ${relay}` : `relay: ${relay} (local/private → must be in server RELAYS)`)
 
-  const res = await subscribe(cfg.serverUrl, signer, push, relays)
+  // Two registration paths: plaintext message, or B-scheme label token
+  // (salt derived from the seed — same token on every device sharing the seed).
+  const messageInput = document.getElementById('message') as HTMLInputElement | null
+  const modeInput = document.getElementById('mode') as HTMLSelectElement | null
+  const text = (messageInput?.value ?? '').trim()
+  let message: string | undefined
+  if (text) {
+    if (modeInput?.value === 'hash') {
+      const token = await labelToken(getSeed(), text)
+      message = token
+      const labels = JSON.parse(
+        localStorage.getItem(LABEL_MAP_KEY) ?? '{}',
+      ) as Record<string, string>
+      labels[token] = text
+      syncLabelMap(labels)
+      log(`message: ${token.slice(0, 12)}… (seed-유도 해시 등록 — 원문: ${text})`)
+    } else {
+      message = text
+      log(`message: ${text} (평문 등록)`)
+    }
+  } else {
+    log('message: (없음 — 기본 알림)')
+  }
+
+  const res = await subscribe(cfg.serverUrl, signer, push, { relays, message }).catch((err) => {
+    log(`subscribe 실패: ${err instanceof Error ? err.message : err} — `)
+    log(`  서버가 HTTPS면 KKACHI_URL=https://… 로 재시작하세요 (bun run pwa)`)
+    throw err
+  })
   log(`subscribe → ${res.status} ${await res.text()}`)
 }
 
@@ -193,3 +238,11 @@ document.getElementById('saveRelay')?.addEventListener('click', () => {
 })
 
 log(`ready — server ${window.KKACHI_CONFIG.serverUrl}, relay ${getRelay()}`)
+
+// Re-sync the label map to the SW on load (the SW may have restarted since).
+try {
+  const labels = JSON.parse(localStorage.getItem(LABEL_MAP_KEY) ?? '{}') as Record<string, string>
+  if (Object.keys(labels).length > 0) syncLabelMap(labels)
+} catch {
+  // no map yet
+}

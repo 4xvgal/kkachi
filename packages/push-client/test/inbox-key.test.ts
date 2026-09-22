@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { finalizeEvent, verifyEvent } from 'nostr-tools'
 import { createInboxSigner, nip98Header, sha256Hex, subscribe } from '../src/register.ts'
-import { deriveInboxPub, deriveInboxSecret } from '../src/inbox-key.ts'
+import { deriveInboxPub, deriveInboxSecret, deriveLabelSalt, labelToken } from '../src/inbox-key.ts'
 import { HTTP_AUTH_KIND, isInboxPub, type PushMaterial } from '../src/protocol.ts'
 
 const seed = new Uint8Array(32).map((_, i) => i + 1)
@@ -36,6 +36,22 @@ describe('inbox key derivation', () => {
   test('different seeds diverge', async () => {
     const other = new Uint8Array(32).fill(7)
     expect(await deriveInboxPub(seed, '2026-09')).not.toBe(await deriveInboxPub(other, '2026-09'))
+  })
+
+  test('deriveLabelSalt: same seed derives the same salt; a different seed derives a different one', async () => {
+    const other = new Uint8Array(32).fill(7)
+    expect(await deriveLabelSalt(seed)).toBe(await deriveLabelSalt(seed))
+    expect(await deriveLabelSalt(seed)).not.toBe(await deriveLabelSalt(other))
+    expect(await deriveLabelSalt(seed)).not.toContain('=')
+  })
+
+  test('labelToken: deterministically derived per seed+text, unique per user, and opaque on the wire', async () => {
+    const other = new Uint8Array(32).fill(7)
+    const a = await labelToken(seed, '입출금')
+    expect(await labelToken(seed, '입출금')).toBe(a)
+    expect(await labelToken(seed, '메시지')).not.toBe(a)
+    expect(await labelToken(other, '입출금')).not.toBe(a)
+    expect(a).not.toContain('입출금')
   })
 
   test('pubkey matches signed inbox secret', async () => {
@@ -100,7 +116,7 @@ describe('subscribe retry/timeout', () => {
     }) as unknown as typeof fetch)
 
     try {
-      const res = await subscribe('https://srv', signer, PUSH, undefined, {
+      const res = await subscribe('https://srv', signer, PUSH, {
         retries: 3,
         timeoutMs: 1000,
       })
@@ -122,7 +138,7 @@ describe('subscribe retry/timeout', () => {
 
     try {
       await expect(
-        subscribe('https://srv', signer, PUSH, undefined, { retries: 2, timeoutMs: 1000 }),
+        subscribe('https://srv', signer, PUSH, { retries: 2, timeoutMs: 1000 }),
       ).rejects.toThrow()
       expect(calls).toBe(2)
     } finally {

@@ -174,6 +174,7 @@ export function createRequestHandler(deps: HandlerDeps): (req: Request) => Promi
         filter: body.filter,
         push: body.push,
         relays: body.relays,
+        message: body.message,
         createdAt: now(),
       })
       return json({ ok: true })

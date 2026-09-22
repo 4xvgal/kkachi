@@ -15,7 +15,12 @@ import { join } from 'node:path'
 const dir = import.meta.dir
 const dist = join(dir, 'dist')
 const port = Number(process.env.PWA_PORT ?? 5173)
-const serverUrl = process.env.KKACHI_URL ?? 'http://localhost:8787'
+// The kkachi server runs HTTPS when TLS_CERT/TLS_KEY are set; default the
+// demo server URL to the same scheme so a TLS-configured server actually works.
+const serverScheme = process.env.TLS_CERT && process.env.TLS_KEY ? 'https' : 'http'
+const serverUrl =
+  process.env.KKACHI_URL ??
+  (process.env.PORT ? `${serverScheme}://localhost:${process.env.PORT}` : `${serverScheme}://localhost:8787`)
 const vapidPublicKey = process.env.VAPID_PUBLIC_KEY ?? ''
 const relayUrl =
   process.env.PWA_RELAY ?? process.env.RELAYS?.split(',')[0]?.trim() ?? 'ws://localhost:4444/relay'
@@ -50,6 +55,9 @@ const contentTypes: Record<string, string> = {
 
 Bun.serve({
   port,
+  ...(process.env.TLS_CERT && process.env.TLS_KEY
+    ? { tls: { certFile: process.env.TLS_CERT, keyFile: process.env.TLS_KEY } }
+    : {}),
   async fetch(req) {
     const path = new URL(req.url).pathname
     const rel = path === '/' ? '/index.html' : path
@@ -63,8 +71,10 @@ Bun.serve({
   },
 })
 
-console.log(`[pwa] http://localhost:${port}`)
+console.log(`[pwa] ${process.env.TLS_CERT && process.env.TLS_KEY ? 'https' : 'http'}://localhost:${port}`)
 console.log(`[pwa] server = ${serverUrl}`)
 console.log(`[pwa] relay  = ${relayUrl}`)
 console.log(`[pwa] vapid  = ${vapidPublicKey || '(unset)'}`)
-console.log(`[pwa] start the server with: CORS_ORIGIN=http://localhost:${port} bun run server`)
+console.log(
+  `[pwa] start the server with: CORS_ORIGIN=${serverScheme}://localhost:${port} bun run server`,
+)

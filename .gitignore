@@ -7,3 +7,4 @@ dist/
 .vapid.json
 .DS_Store
 fonstr-data/
+tsconfig.tsbuildinfo

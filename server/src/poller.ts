@@ -108,7 +108,6 @@ export function createPoller(deps: PollerDeps) {
       .filter((inbox): inbox is InboxPub => inbox !== null)
     const targets = aggregate(hits)
 
-    const payload = JSON.stringify(buildPushPayload())
     let pushed = 0
     let rateLimited = 0
     for (const inbox of targets) {
@@ -120,7 +119,7 @@ export function createPoller(deps: PollerDeps) {
         continue
       }
       try {
-        await sender(sub.push, payload)
+        await sender(sub.push, JSON.stringify(buildPushPayload(sub.message)))
         pushed += 1
       } catch (err) {
         if (err instanceof PushGoneError) {

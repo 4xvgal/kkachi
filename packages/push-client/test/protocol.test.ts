@@ -3,12 +3,16 @@ import {
   buildFilter,
   buildPushPayload,
   buildSubscribeReq,
+  decodePushPayload,
   GIFT_WRAP_KIND,
+  hashLabel,
   isAllowedRelayUrl,
   isInboxPub,
   isPushMaterial,
+  isPushMessage,
   isSubscribeReq,
   PROTOCOL_VERSION,
+  resolveLabel,
   sha256Hex,
   type InboxPub,
 } from '../src/protocol.ts'
@@ -24,19 +28,63 @@ describe('protocol builders', () => {
     expect(buildFilter(INBOX)).toEqual({ kinds: [GIFT_WRAP_KIND], '#p': [INBOX] })
   })
 
-  test('buildPushPayload is content-less {v:1}', () => {
+  test('buildPushPayload carries the registered message or stays content-less', () => {
     expect(buildPushPayload()).toEqual({ v: PROTOCOL_VERSION })
     expect(Object.keys(buildPushPayload())).toEqual(['v'])
+    expect(buildPushPayload('nip17')).toEqual({ v: PROTOCOL_VERSION, m: 'nip17' })
   })
 
-  test('buildSubscribeReq composes filter + push, optional relays', () => {
+  test('decodePushPayload parses v2 pushes and degrades on garbage', () => {
+    expect(decodePushPayload(JSON.stringify({ v: PROTOCOL_VERSION, m: 'aB3x' }))).toEqual({
+      v: PROTOCOL_VERSION,
+      m: 'aB3x',
+    })
+    expect(decodePushPayload(JSON.stringify({ v: PROTOCOL_VERSION }))).toEqual({
+      v: PROTOCOL_VERSION,
+    })
+    expect(decodePushPayload('not json')).toEqual({ v: PROTOCOL_VERSION })
+    // raw bytes (what a SW push event delivers)
+    const bytes = new TextEncoder().encode(JSON.stringify({ v: PROTOCOL_VERSION, m: 'x' })).buffer
+    expect(decodePushPayload(bytes)).toEqual({ v: PROTOCOL_VERSION, m: 'x' })
+  })
+
+  test('hashLabel is deterministic per salt and opaque across salts', async () => {
+    const a = await hashLabel('app-salt', '입출금')
+    const b = await hashLabel('app-salt', '입출금')
+    const c = await hashLabel('app-salt', '메시지')
+    const d = await hashLabel('other-salt', '입출금')
+    expect(a).toBe(b)
+    expect(a).not.toBe(c)
+    expect(a).not.toBe(d)
+    expect(a).not.toContain('입출금')
+    expect(a.length).toBeLessThanOrEqual(32)
+  })
+
+  test('resolveLabel recomputes candidates and returns the match', async () => {
+    const salt = 'per-user-salt'
+    const candidates = ['입출금', '메시지', 'p2p-체결'] as const
+    const token = await hashLabel(salt, '메시지')
+    expect(await resolveLabel(salt, token, candidates)).toBe('메시지')
+    expect(await resolveLabel(salt, 'zzzzzz', candidates)).toBeUndefined()
+  })
+
+  test('buildSubscribeReq composes filter + push, optional relays/message', () => {
     const plain = buildSubscribeReq(INBOX, PUSH)
     expect(plain.filter['#p']).toEqual([INBOX])
     expect(plain.push).toEqual(PUSH)
     expect(plain.relays).toBeUndefined()
-    expect(buildSubscribeReq(INBOX, PUSH, ['wss://inbox.example']).relays).toEqual([
-      'wss://inbox.example',
-    ])
+    expect(plain.message).toBeUndefined()
+    expect(
+      buildSubscribeReq(INBOX, PUSH, { relays: ['wss://inbox.example'] }).relays,
+    ).toEqual(['wss://inbox.example'])
+    expect(buildSubscribeReq(INBOX, PUSH, { message: '입출금' }).message).toBe('입출금')
+  })
+
+  test('length cap is bytes, not chars (multibyte safe)', () => {
+    expect(isPushMessage('x'.repeat(128))).toBe(true)
+    expect(isPushMessage('x'.repeat(129))).toBe(false)
+    expect(isPushMessage('한'.repeat(64))).toBe(false) // 3 bytes each
+    expect(isPushMessage('')).toBe(false)
   })
 })
 
@@ -99,6 +147,10 @@ describe('subscribe validation', () => {
     [{ ...valid, relays: ['https://not-a-relay'] }, false],
     [{ ...valid, relays: [] }, false],
     [{ ...valid, relays: Array.from({ length: 11 }, () => 'wss://r.example') }, false],
+    [{ ...valid, message: '입출금' }, true],
+    [{ ...valid, message: 'x'.repeat(129) }, false],
+    [{ ...valid, message: '' }, false],
+    [{ ...valid, message: 42 }, false],
   ]
 
   test('accepts well-formed, rejects malformed/unsafe', () => {

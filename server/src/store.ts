@@ -6,7 +6,7 @@
  * Stored data is blind: opaque inboxPub only, never npub, never IP.
  */
 
-import type { Filter, InboxPub, PushMaterial } from 'kkachi/protocol'
+import type { Filter, InboxPub, PushMaterial, PushMessage } from 'kkachi/protocol'
 
 export type StoredSub = {
   inboxPub: InboxPub
@@ -14,6 +14,8 @@ export type StoredSub = {
   push: PushMaterial
   /** Inbox relays to watch for this subscriber (NIP-17 kind:10050). */
   relays?: string[]
+  /** Client-registered push message; forwarded verbatim on match. */
+  message?: PushMessage
   createdAt: number
 }
 
