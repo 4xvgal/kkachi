@@ -3,6 +3,7 @@
  */
 
 import { DEFAULT_AUTH_MAX_SKEW_SEC } from './core.ts'
+import { GIFT_WRAP_KIND } from 'kkachi/protocol'
 
 export type VapidConfig = {
   publicKey: string
@@ -42,6 +43,11 @@ export type Config = {
   pollMaxEvents: number
   /** Per-relay query timeout (ms). Bounds a hung relay. */
   relayTimeoutMs: number
+  /**
+   * Event kinds subscribers may register. Mandatory whitelist (no "all").
+   * `ALLOWED_KINDS` env, comma-separated; default `[1059]` (gift-wrap only).
+   */
+  allowedKinds: number[]
   maxPTags: number
   authMaxSkewSec: number
   /** Outbound push token bucket, per target (inboxPub). Relay-injection defense. */
@@ -61,6 +67,14 @@ function splitList(value: string | undefined): string[] {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)
+}
+
+/** ALLOWED_KINDS: comma-separated positive integers; unset/empty/garbage → [1059]. */
+function parseAllowedKinds(value: string | undefined): number[] {
+  const kinds = splitList(value)
+    .map(Number)
+    .filter((k) => Number.isInteger(k) && k > 0)
+  return kinds.length > 0 ? [...new Set(kinds)] : [GIFT_WRAP_KIND]
 }
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
@@ -92,6 +106,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     pollMaxPages: Number(env.POLL_MAX_PAGES ?? 10),
     pollMaxEvents: Number(env.POLL_MAX_EVENTS ?? 5000),
     relayTimeoutMs: Number(env.RELAY_TIMEOUT_MS ?? 10_000),
+    allowedKinds: parseAllowedKinds(env.ALLOWED_KINDS),
     maxPTags: Number(env.MAX_P_TAGS ?? 10),
     authMaxSkewSec: Number(env.AUTH_MAX_SKEW_SEC ?? DEFAULT_AUTH_MAX_SKEW_SEC),
     pushRateBurst: Number(env.PUSH_RATE_BURST ?? 5),

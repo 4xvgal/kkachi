@@ -40,6 +40,7 @@ function relayConfig(): Config {
     pollMaxPages: 10,
     pollMaxEvents: 5000,
     relayTimeoutMs: 10_000,
+    allowedKinds: [1059],
     maxPTags: 10,
     authMaxSkewSec: 60,
     pushRateBurst: 5,

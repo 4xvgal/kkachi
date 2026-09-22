@@ -144,6 +144,28 @@ export function createRequestHandler(deps: HandlerDeps): (req: Request) => Promi
       return json({ ok: true, v: PROTOCOL_VERSION, records: await store.countSubs() })
     }
 
+    /** Whitelisted kinds a client may subscribe to (no auth; public info). */
+    if (req.method === 'GET' && pathname === '/push/kinds') {
+      return json({ kinds: config.allowedKinds })
+    }
+
+    /** The signer's current subscription (multi-device reconciliation). */
+    if (req.method === 'GET' && pathname === '/push/subscription') {
+      const signer = await authenticate(req, config, nowSec)
+      if (!signer) return json({ error: 'unauthorized' }, 401)
+      if (!apiLimiter.tryConsume(signer, now())) {
+        return json({ error: 'rate limited' }, 429)
+      }
+      const sub = await store.getSub(signer)
+      if (!sub) return json({ error: 'no subscription' }, 404)
+      return json({
+        filter: sub.filter,
+        push: sub.push,
+        relays: sub.relays,
+        message: sub.message,
+      })
+    }
+
     if (req.method === 'POST' && pathname === '/push/subscribe') {
       const raw = await req.text()
       const signer = await authenticate(req, config, nowSec, raw)
@@ -160,6 +182,10 @@ export function createRequestHandler(deps: HandlerDeps): (req: Request) => Promi
         return json({ error: 'invalid json' }, 400)
       }
       if (!isSubscribeReq(body)) return json({ error: 'invalid subscribe request' }, 400)
+      const denied = body.filter.kinds.filter((k) => !config.allowedKinds.includes(k))
+      if (denied.length > 0) {
+        return json({ error: 'kind not allowed', allowed: config.allowedKinds }, 400)
+      }
       if (body.filter['#p'][0] !== signer) {
         return json({ error: 'signer must equal filter #p' }, 400)
       }

@@ -24,8 +24,23 @@ const PUSH = {
 }
 
 describe('protocol builders', () => {
-  test('buildFilter pins kind and single inbox', () => {
+  test('buildFilter pins kinds and single inbox', () => {
     expect(buildFilter(INBOX)).toEqual({ kinds: [GIFT_WRAP_KIND], '#p': [INBOX] })
+    expect(buildFilter(INBOX, [1, 7])).toEqual({ kinds: [1, 7], '#p': [INBOX] })
+  })
+
+  test('buildFilter rejects malformed kinds', () => {
+    const bad = [[], [0], [-1], [1.5], [NaN], [1, 1]]
+    for (const b of bad) {
+      // eslint-disable-next-line no-cond-assign
+      let threw = false
+      try {
+        buildFilter(INBOX, b)
+      } catch {
+        threw = true
+      }
+      expect(threw, String(b)).toBe(true)
+    }
   })
 
   test('buildPushPayload carries the registered message or stays content-less', () => {
@@ -68,7 +83,7 @@ describe('protocol builders', () => {
     expect(await resolveLabel(salt, 'zzzzzz', candidates)).toBeUndefined()
   })
 
-  test('buildSubscribeReq composes filter + push, optional relays/message', () => {
+  test('buildSubscribeReq composes filter + push, optional relays/message/kinds', () => {
     const plain = buildSubscribeReq(INBOX, PUSH)
     expect(plain.filter['#p']).toEqual([INBOX])
     expect(plain.push).toEqual(PUSH)
@@ -78,6 +93,7 @@ describe('protocol builders', () => {
       buildSubscribeReq(INBOX, PUSH, { relays: ['wss://inbox.example'] }).relays,
     ).toEqual(['wss://inbox.example'])
     expect(buildSubscribeReq(INBOX, PUSH, { message: '입출금' }).message).toBe('입출금')
+    expect(buildSubscribeReq(INBOX, PUSH, { kinds: [1, 7] }).filter.kinds).toEqual([1, 7])
   })
 
   test('length cap is bytes, not chars (multibyte safe)', () => {
@@ -139,7 +155,10 @@ describe('subscribe validation', () => {
   const valid = buildSubscribeReq(INBOX, PUSH)
   const table: Array<[unknown, boolean]> = [
     [valid, true],
-    [{ ...valid, filter: { kinds: [1], '#p': [INBOX] } }, false],
+    [{ ...valid, filter: { kinds: [1, 7], '#p': [INBOX] } }, true],
+    [{ ...valid, filter: { kinds: [], '#p': [INBOX] } }, false],
+    [{ ...valid, filter: { kinds: [1, 1], '#p': [INBOX] } }, false],
+    [{ ...valid, filter: { kinds: [1.5], '#p': [INBOX] } }, false],
     [{ filter: { kinds: [GIFT_WRAP_KIND], '#p': [INBOX, INBOX] }, push: PUSH }, false],
     [{ filter: valid.filter, push: { endpoint: 'x', keys: {} } }, false],
     // local/private relays are accepted at registration (SSRF is checked server-side)

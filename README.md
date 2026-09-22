@@ -38,14 +38,17 @@ Default persistence is in-memory. Set `DATABASE_URL` to `sqlite:./kkachi.db` or 
 
 All configuration lives in `.env` — see [`.env.example`](./.env.example) for the
 full list (port, `PUBLIC_URL`, relays, polling window, rate limits, DB, VAPID).
+`ALLOWED_KINDS` (default `1059`) is the mandatory event-kind whitelist
+subscribers may register — see `GET /push/kinds`.
 
 ## API
 
 | Method | Path                | Body / auth                                             |
 | ------ | ------------------- | ------------------------------------------------------- |
 | POST   | `/push/subscribe`   | NIP-98 + `{ filter, push, relays?, message? }`          |
-| POST   | `/push/unsubscribe` | NIP-98 (signer = inboxPub)                              |
-| GET    | `/healthz`          | —                                                       |
+| POST   | `/push/unsubscribe` | NIP-98 (signer = filter `#p`)                           |
+| GET    | `/push/kinds`       | whitelisted kinds a client may register (`{ kinds }`)   |
+| GET    | `/healthz`          | —                                                        |
 
 ## SDK usage
 
@@ -61,6 +64,9 @@ const signer = await createInboxSigner(walletSeed, epoch) // secretKey stays on 
 
 const push = (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey })).toJSON() as PushMaterial
 await subscribe('https://push.example', signer, push, { relays: ['wss://inbox.example'] })
+
+// Subscribe to additional event kinds (must be in the server's ALLOWED_KINDS).
+await subscribe('https://push.example', signer, push, { kinds: [1059, 1, 7] })
 
 // Register a client-chosen push message (opaque to the server): plaintext…
 await subscribe('https://push.example', signer, push, { message: '입출금' })

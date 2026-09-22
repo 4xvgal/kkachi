@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import { finalizeEvent } from 'nostr-tools'
 import {
   buildSubscribeReq,
+  GIFT_WRAP_KIND,
   HTTP_AUTH_KIND,
   isInboxPub,
   type InboxPub,
@@ -41,6 +42,7 @@ function config(over: Partial<Config> = {}): Config {
     pollMaxPages: 10,
     pollMaxEvents: 5000,
     relayTimeoutMs: 10_000,
+    allowedKinds: [GIFT_WRAP_KIND],
     maxPTags: 10,
     authMaxSkewSec: 60,
     pushRateBurst: 5,
@@ -77,7 +79,7 @@ function post(
 async function signBody(
   inboxPub: InboxPub,
   push: PushMaterial = PUSH,
-  opts?: { relays?: string[]; message?: string },
+  opts?: { relays?: string[]; message?: string; kinds?: number[] },
   epoch = '2026-09',
 ): Promise<{ body: string; header: string }> {
   const signer = await createInboxSigner(seed, epoch)
@@ -121,6 +123,55 @@ describe('GET /healthz', () => {
     const res = await handle(new Request('http://localhost/healthz'))
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ ok: true, v: 2, records: 0 })
+  })
+})
+
+describe('GET /push/kinds', () => {
+  test('returns the configured whitelist without auth', async () => {
+    const res = await handle(new Request('http://localhost/push/kinds'))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ kinds: [GIFT_WRAP_KIND] })
+  })
+
+  test('reflects ALLOWED_KINDS config', async () => {
+    const h = createRequestHandler({ store, config: config({ allowedKinds: [GIFT_WRAP_KIND, 1, 7] }) })
+    const res = await h(new Request('http://localhost/push/kinds'))
+    expect(await res.json()).toEqual({ kinds: [GIFT_WRAP_KIND, 1, 7] })
+  })
+})
+
+describe('GET /push/subscription', () => {
+  const SUBS_URL = 'http://localhost/push/subscription'
+
+  test('401 without NIP-98 auth', async () => {
+    const res = await handle(new Request(SUBS_URL))
+    expect(res.status).toBe(401)
+  })
+
+  test('404 when the signer has no subscription', async () => {
+    const signer = await createInboxSigner(seed, '2026-09')
+    const auth = await nip98Header(signer, SUBS_URL, 'GET')
+    const res = await handle(new Request(SUBS_URL, { headers: { authorization: auth } }))
+    expect(res.status).toBe(404)
+  })
+
+  test('returns the signer subscription after subscribe', async () => {
+    const inbox = await deriveInboxPub(seed, '2026-09')
+    const { body, header } = await signBody(inbox, PUSH, {
+      message: '입출금',
+      relays: ['wss://inbox.example'],
+    })
+    await post(handle, { body, header })
+    const signer = await createInboxSigner(seed, '2026-09')
+    const auth = await nip98Header(signer, SUBS_URL, 'GET')
+    const res = await handle(new Request(SUBS_URL, { headers: { authorization: auth } }))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      filter: { kinds: [GIFT_WRAP_KIND], '#p': [inbox] },
+      push: PUSH,
+      relays: ['wss://inbox.example'],
+      message: '입출금',
+    })
   })
 })
 
@@ -195,6 +246,23 @@ describe('POST /push/subscribe — success', () => {
     expect((await store.getSub(inbox))?.message).toBe('입출금')
   })
 
+  test('accepts a whitelisted non-1059 kind', async () => {
+    const h = createRequestHandler({ store, config: config({ allowedKinds: [GIFT_WRAP_KIND, 1] }) })
+    const inbox = await deriveInboxPub(seed, '2026-09')
+    const { body, header } = await signBody(inbox, PUSH, { kinds: [1] })
+    expect((await post(h, { body, header })).status).toBe(200)
+    expect((await store.getSub(inbox))?.filter.kinds).toEqual([1])
+  })
+
+  test('rejects kinds outside the whitelist with the allowed list', async () => {
+    const h = createRequestHandler({ store, config: config({ allowedKinds: [GIFT_WRAP_KIND, 1] }) })
+    const inbox = await deriveInboxPub(seed, '2026-09')
+    const { body, header } = await signBody(inbox, PUSH, { kinds: [7] })
+    const res = await post(h, { body, header })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'kind not allowed', allowed: [GIFT_WRAP_KIND, 1] })
+  })
+
   test('accepts local/private relays at registration (SSRF filtered at poll time)', async () => {
     const inbox = await deriveInboxPub(seed, '2026-09')
     const { body, header } = await signBody(inbox, PUSH, { relays: ['ws://127.0.0.1/relay'] })
@@ -243,6 +311,20 @@ describe('POST /push/subscribe — rejections', () => {
       make: async () => {
         const body = JSON.stringify({ nope: true })
         const header = await nip98Header(await createInboxSigner(seed, '2026-09'), SUB_URL, 'POST', body)
+        return { body, header }
+      },
+    },
+    {
+      name: 'empty kinds array',
+      status: 400,
+      make: async () => {
+        const inbox = await deriveInboxPub(seed, '2026-09')
+        const signer = await createInboxSigner(seed, '2026-09')
+        const body = JSON.stringify({
+          filter: { kinds: [], '#p': [inbox] },
+          push: PUSH,
+        })
+        const header = await nip98Header(signer, SUB_URL, 'POST', body)
         return { body, header }
       },
     },

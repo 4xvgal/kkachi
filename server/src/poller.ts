@@ -11,11 +11,10 @@
 
 import {
   buildPushPayload,
-  GIFT_WRAP_KIND,
   isAllowedRelayUrl,
   type InboxPub,
 } from 'kkachi/protocol'
-import { aggregate, isGiftWrap, jitter, matchInbox, withinMaxPTags } from './core.ts'
+import { aggregate, jitter, matchInbox, withinMaxPTags } from './core.ts'
 import { createRateLimiter, type RateLimiter } from './rate-limit.ts'
 import type { Config } from './config.ts'
 import type { Store, StoredSub } from './store.ts'
@@ -89,14 +88,18 @@ export function createPoller(deps: PollerDeps) {
     const nowSec = Math.floor(now() / 1000)
     const since = nowSec - config.pollLookbackSec
 
-    // Per-relay pagination and policy live in the relay client.
+    // Per-relay pagination and policy live in the relay client. Query the
+    // whole whitelist in one REQ; the local pass re-checks kinds because a
+    // hostile relay may ignore the filter.
     const events = await relayClient.querySync(relaysFor(subs), {
-      kinds: [GIFT_WRAP_KIND],
+      kinds: [...config.allowedKinds],
       since,
       until: nowSec,
       limit: config.pollLimit,
     })
-    const usable = events.filter((ev) => isGiftWrap(ev) && withinMaxPTags(ev, config.maxPTags))
+    const usable = events.filter(
+      (ev) => config.allowedKinds.includes(ev.kind) && withinMaxPTags(ev, config.maxPTags),
+    )
 
     const unseen = await store.filterUnseen(usable.map((ev) => ev.id))
     const fresh = usable.filter((ev) => unseen.has(ev.id))

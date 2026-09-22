@@ -4,7 +4,7 @@
  */
 
 import { deriveInboxPub, labelToken } from 'kkachi/inbox-key'
-import { createInboxSigner, subscribe, unsubscribe } from 'kkachi/register'
+import { createInboxSigner, getSubscription, subscribe, unsubscribe } from 'kkachi/register'
 import { isAllowedRelayUrl, isPushMaterial, type PushMaterial } from 'kkachi/protocol'
 import { finalizeEvent, generateSecretKey, nip19, SimplePool } from 'nostr-tools'
 
@@ -118,6 +118,24 @@ async function enable(): Promise<void> {
   const relays = isAllowedRelayUrl(relay) ? [relay] : undefined
   log(relays ? `relay: ${relay}` : `relay: ${relay} (local/private → must be in server RELAYS)`)
 
+  // Kind selection: comma-separated, checked against the server whitelist.
+  const kinds = (document.getElementById('kinds') as HTMLInputElement | null)
+    ?.value.split(',')
+    .map((s) => Number(s.trim()))
+    .filter((k) => Number.isInteger(k) && k > 0) ?? [1059]
+  if (kinds.length === 0) {
+    log('kinds: empty — comma-separated positive integers, e.g. 1059,1,7')
+    return
+  }
+  const kindsRes = await fetch(`${cfg.serverUrl}/push/kinds`)
+  const allowed = kindsRes.ok ? ((await kindsRes.json()).kinds as number[]) : []
+  const denied = kinds.filter((k) => !allowed.includes(k))
+  if (allowed.length > 0 && denied.length > 0) {
+    log(`kinds: ${denied.join(', ')} not allowed by server (allowed: ${allowed.join(', ')})`)
+    return
+  }
+  log(`kinds: ${kinds.join(', ')}`)
+
   // Two registration paths: plaintext message, or B-scheme label token
   // (salt derived from the seed — same token on every device sharing the seed).
   const messageInput = document.getElementById('message') as HTMLInputElement | null
@@ -142,7 +160,7 @@ async function enable(): Promise<void> {
     log('message: (없음 — 기본 알림)')
   }
 
-  const res = await subscribe(cfg.serverUrl, signer, push, { relays, message }).catch((err) => {
+  const res = await subscribe(cfg.serverUrl, signer, push, { relays, message, kinds }).catch((err) => {
     log(`subscribe 실패: ${err instanceof Error ? err.message : err} — `)
     log(`  서버가 HTTPS면 KKACHI_URL=https://… 로 재시작하세요 (bun run pwa)`)
     throw err
@@ -158,6 +176,24 @@ async function disable(): Promise<void> {
   const registration = await navigator.serviceWorker.ready
   const subscription = await registration.pushManager.getSubscription()
   if (subscription) await subscription.unsubscribe()
+}
+
+/** Show the signer's current subscription as registered on the server. */
+async function showSubscription(): Promise<void> {
+  const cfg = window.KKACHI_CONFIG
+  const signer = await createInboxSigner(getSeed(), EPOCH)
+  const res = await getSubscription(cfg.serverUrl, signer)
+  if (res.status === 404) {
+    log('subscription: none registered')
+    return
+  }
+  if (!res.ok) {
+    log(`subscription → ${res.status} ${await res.text()}`)
+    return
+  }
+  const sub = (await res.json()) as { filter: { kinds: number[] }; message?: string }
+  log(`subscription → kinds: [${sub.filter.kinds.join(', ')}]`)
+  if (sub.message) log(`  message: ${sub.message}`)
 }
 
 /** Publish a content-less kind:1059 gift-wrap addressed to `target` (hex). */
@@ -219,6 +255,9 @@ document.getElementById('enable')?.addEventListener('click', () => {
 })
 document.getElementById('disable')?.addEventListener('click', () => {
   void disable().catch((err) => log(`error: ${String(err)}`))
+})
+document.getElementById('status')?.addEventListener('click', () => {
+  void showSubscription().catch((err) => log(`error: ${String(err)}`))
 })
 document.getElementById('send')?.addEventListener('click', () => {
   void sendToSelf().catch((err) => log(`error: ${String(err)}`))

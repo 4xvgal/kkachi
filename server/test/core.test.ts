@@ -4,7 +4,6 @@ import {
   aggregate,
   checkNip98,
   consumeToken,
-  isGiftWrap,
   jitter,
   matchInbox,
   nextPage,
@@ -67,11 +66,6 @@ describe('pure core', () => {
     for (const [tags, max, expected] of table) {
       expect(withinMaxPTags(ev({ tags }), max)).toBe(expected)
     }
-  })
-
-  test('isGiftWrap only accepts kind 1059', () => {
-    expect(isGiftWrap(ev())).toBe(true)
-    expect(isGiftWrap(ev({ kind: 1 }))).toBe(false)
   })
 
   test('nextPage decides when to stop paging', () => {

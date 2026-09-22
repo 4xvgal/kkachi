@@ -37,6 +37,7 @@ function config(over: Partial<Config> = {}): Config {
     pollMaxPages: 10,
     pollMaxEvents: 5000,
     relayTimeoutMs: 10_000,
+    allowedKinds: [GIFT_WRAP_KIND],
     maxPTags: 10,
     authMaxSkewSec: 60,
     pushRateBurst: 5,
@@ -166,6 +167,18 @@ describe('poller.tick (fixed lookback window)', () => {
     if (sub) await store.upsertSub({ ...sub, message: '입출금' })
     await poller.tick()
     expect(calls.map((c) => c.payload)).toEqual([JSON.stringify({ v: 2, m: '입출금' })])
+  })
+
+  test('queries the whitelist: pushes whitelisted non-1059 kinds, ignores the rest', async () => {
+    const { poller, calls, filters } = await setup({
+      subs: [{ inbox: INBOX_A }],
+      cfg: { allowedKinds: [GIFT_WRAP_KIND, 1] },
+      events: [ev('kind1', INBOX_A, { kind: 1 }), ev('kind7', INBOX_A, { kind: 7 })],
+    })
+    const res = await poller.tick()
+    expect(res.pushed).toBe(1)
+    expect(calls).toHaveLength(1)
+    expect(filters[0]!.kinds).toEqual([GIFT_WRAP_KIND, 1])
   })
 
   test('dedups seen events across ticks (no re-push)', async () => {
