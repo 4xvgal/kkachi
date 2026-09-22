@@ -1,6 +1,6 @@
 {
   "name": "kkachi",
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0",
   "description": "Blind Web Push client SDK for Nostr gift-wrap (kind:1059) notifications",
   "type": "module",
   "license": "MIT",
