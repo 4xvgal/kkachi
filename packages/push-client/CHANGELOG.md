@@ -1,5 +1,11 @@
 # kkachi
 
+## 0.0.4-rc.0
+
+### Patch Changes
+
+- 9e5d8c0: feat:relay-pagianation-policy
+
 ## 0.0.3
 
 ### Patch Changes
