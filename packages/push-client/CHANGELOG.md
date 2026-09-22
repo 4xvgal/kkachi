@@ -1,5 +1,12 @@
 # kkachi
 
+## 0.1.0-rc.1
+
+### Minor Changes
+
+- e042f0b: feat: multi-kind subscriptions with ALLOWED_KINDS whitelist, kind-array filter, /push/kinds and /push/subscription endpoints, SDK kinds option, PWA demos
+- e194940: User-custom push message (v2): `subscribe` accepts `{ message }` (plaintext or a `hashLabel(salt, text)` token) and the server forwards it verbatim in the push payload (`{ v: 2, m }`). SDK `subscribe` 4th argument is now an options object (`{ relays?, message?, timeoutMs?, retries?, signal? }`). Adds `hashLabel` and `decodePushPayload` to the shared protocol.
+
 ## 0.0.4-rc.0
 
 ### Patch Changes
