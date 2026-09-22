@@ -14,7 +14,6 @@ import {
   GIFT_WRAP_KIND,
   isAllowedRelayUrl,
   type InboxPub,
-  type NostrEvent,
 } from 'kkachi/protocol'
 import { aggregate, isGiftWrap, jitter, matchInbox, withinMaxPTags } from './core.ts'
 import { createRateLimiter, type RateLimiter } from './rate-limit.ts'
@@ -81,32 +80,6 @@ export function createPoller(deps: PollerDeps) {
     return [...set]
   }
 
-  /** Walk the lookback window newest-first with `until` pagination. */
-  async function fetchWindow(
-    relays: string[],
-    since: number,
-    nowSec: number,
-  ): Promise<NostrEvent[]> {
-    const out: NostrEvent[] = []
-    let until = nowSec
-    for (let page = 0; page < config.pollMaxPages; page++) {
-      const batch = await relayClient.querySync(relays, {
-        kinds: [GIFT_WRAP_KIND],
-        since,
-        until,
-        limit: config.pollLimit,
-      })
-      if (batch.length === 0) break
-      out.push(...batch)
-      if (batch.length < config.pollLimit) break
-      let oldest = Infinity
-      for (const ev of batch) if (ev.created_at < oldest) oldest = ev.created_at
-      if (oldest <= since) break
-      until = oldest - 1
-    }
-    return out
-  }
-
   async function tick(): Promise<TickResult> {
     const subs = await store.listSubs()
     if (subs.length === 0) return { scanned: 0, fresh: 0, targets: 0, pushed: 0, rateLimited: 0 }
@@ -116,7 +89,13 @@ export function createPoller(deps: PollerDeps) {
     const nowSec = Math.floor(now() / 1000)
     const since = nowSec - config.pollLookbackSec
 
-    const events = await fetchWindow(relaysFor(subs), since, nowSec)
+    // Per-relay pagination and policy live in the relay client.
+    const events = await relayClient.querySync(relaysFor(subs), {
+      kinds: [GIFT_WRAP_KIND],
+      since,
+      until: nowSec,
+      limit: config.pollLimit,
+    })
     const usable = events.filter((ev) => isGiftWrap(ev) && withinMaxPTags(ev, config.maxPTags))
 
     const unseen = await store.filterUnseen(usable.map((ev) => ev.id))

@@ -38,6 +38,8 @@ export type Config = {
   pollLookbackSec: number
   pollLimit: number
   pollMaxPages: number
+  /** Global cap on collected events per tick across relays. */
+  pollMaxEvents: number
   /** Per-relay query timeout (ms). Bounds a hung relay. */
   relayTimeoutMs: number
   maxPTags: number
@@ -88,6 +90,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     pollLookbackSec: Number(env.POLL_LOOKBACK_SEC ?? TWO_DAYS_SEC + 3600),
     pollLimit: Number(env.POLL_LIMIT ?? 500),
     pollMaxPages: Number(env.POLL_MAX_PAGES ?? 10),
+    pollMaxEvents: Number(env.POLL_MAX_EVENTS ?? 5000),
     relayTimeoutMs: Number(env.RELAY_TIMEOUT_MS ?? 10_000),
     maxPTags: Number(env.MAX_P_TAGS ?? 10),
     authMaxSkewSec: Number(env.AUTH_MAX_SKEW_SEC ?? DEFAULT_AUTH_MAX_SKEW_SEC),

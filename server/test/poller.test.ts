@@ -35,6 +35,7 @@ function config(over: Partial<Config> = {}): Config {
     pollLookbackSec: 2 * 24 * 60 * 60,
     pollLimit: 500,
     pollMaxPages: 10,
+    pollMaxEvents: 5000,
     relayTimeoutMs: 10_000,
     maxPTags: 10,
     authMaxSkewSec: 60,
@@ -226,40 +227,6 @@ describe('poller.tick (fixed lookback window)', () => {
       expect(calls, c.name).toHaveLength(0)
       if (c.scanned !== undefined) expect(res.scanned).toBe(c.scanned)
     }
-  })
-
-  test('paginates with until until the window is exhausted', async () => {
-    const events = [
-      ev('1', INBOX_A, { created_at: NOW_SEC - 1 }),
-      ev('2', INBOX_A, { created_at: NOW_SEC - 2 }),
-      ev('3', INBOX_A, { created_at: NOW_SEC - 3 }),
-      ev('4', INBOX_A, { created_at: NOW_SEC - 4 }),
-      ev('5', INBOX_A, { created_at: NOW_SEC - 5 }),
-    ]
-    const { store, poller, calls, filters } = await setup({
-      subs: [{ inbox: INBOX_A }],
-      events,
-      cfg: { pollLimit: 2 },
-    })
-    await store.listSubs()
-    const res = await poller.tick()
-    expect(res.scanned).toBe(5)
-    expect(filters.length).toBeGreaterThan(1)
-    expect(calls).toHaveLength(1)
-  })
-
-  test('stops paginating at maxPages', async () => {
-    const events = Array.from({ length: 10 }, (_, i) =>
-      ev(String(i), INBOX_A, { created_at: NOW_SEC - i }),
-    )
-    const { store, poller, filters } = await setup({
-      subs: [{ inbox: INBOX_A }],
-      events,
-      cfg: { pollLimit: 1, pollMaxPages: 3 },
-    })
-    await store.listSubs()
-    await poller.tick()
-    expect(filters).toHaveLength(3)
   })
 
   const relayCases: Array<{

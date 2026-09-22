@@ -138,3 +138,36 @@ export function checkNip98(
 export function isGiftWrap(ev: NostrEvent): boolean {
   return ev.kind === GIFT_WRAP_KIND
 }
+
+export type PageDecision = { done: true } | { done: false; until: number }
+
+/** Decide whether to fetch another page for one relay, and the next `until`. */
+export function nextPage(input: {
+  batch: NostrEvent[]
+  effectiveLimit: number
+  since: number
+  until: number
+}): PageDecision {
+
+  const { batch, effectiveLimit, since, until } = input
+
+  //guard
+  if (effectiveLimit <= 0) return { done: true }
+
+  // 값이 0이면 이미 검색 끝
+  if (batch.length === 0) return { done: true }
+  // effectiveLimit 보다 작으면 더 없다는 뜻
+  if (batch.length < effectiveLimit) return { done: true }
+
+  var oldest = Infinity
+  // 배열은 최신순임.
+  for (const ev of batch) {
+    if (ev.created_at < oldest) oldest = ev.created_at
+  }
+
+  if (oldest <= since) return { done: true }
+
+  // relay ignored the cursor -> stop
+  if (oldest > until) return {done: true}
+  return { done: false, until: oldest - 1 }
+}

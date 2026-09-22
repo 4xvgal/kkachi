@@ -7,6 +7,7 @@ import {
   isGiftWrap,
   jitter,
   matchInbox,
+  nextPage,
   pTags,
   withinMaxPTags,
   type Nip98Claim,
@@ -71,6 +72,33 @@ describe('pure core', () => {
   test('isGiftWrap only accepts kind 1059', () => {
     expect(isGiftWrap(ev())).toBe(true)
     expect(isGiftWrap(ev({ kind: 1 }))).toBe(false)
+  })
+
+  test('nextPage decides when to stop paging', () => {
+    const mk = (created: number[]) => created.map((c, i) => ev({ id: `e${i}`, created_at: c }))
+    // empty / exhausted (fewer than limit)
+    expect(nextPage({ batch: [], effectiveLimit: 5, since: 0, until: 100 })).toEqual({ done: true })
+    expect(nextPage({ batch: mk([10, 9]), effectiveLimit: 5, since: 0, until: 100 })).toEqual({
+      done: true,
+    })
+    // full page, oldest above since -> continue from oldest-1
+    expect(nextPage({ batch: mk([50, 40]), effectiveLimit: 2, since: 0, until: 100 })).toEqual({
+      done: false,
+      until: 39,
+    })
+    // oldest === until is the legitimate next page -> continue
+    expect(nextPage({ batch: mk([50, 40]), effectiveLimit: 2, since: 0, until: 40 })).toEqual({
+      done: false,
+      until: 39,
+    })
+    // reached window floor
+    expect(nextPage({ batch: mk([50, 5]), effectiveLimit: 2, since: 10, until: 100 })).toEqual({
+      done: true,
+    })
+    // no progress: relay returned events newer than `until` (ignored the cursor)
+    expect(nextPage({ batch: mk([100, 100]), effectiveLimit: 2, since: 0, until: 99 })).toEqual({
+      done: true,
+    })
   })
 })
 
