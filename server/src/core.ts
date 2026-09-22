@@ -4,7 +4,6 @@
  */
 
 import {
-  GIFT_WRAP_KIND,
   HTTP_AUTH_KIND,
   isInboxPub,
   type InboxPub,
@@ -132,11 +131,6 @@ export function checkNip98(
     return { ok: false, reason: 'payload hash mismatch' }
   }
   return { ok: true }
-}
-
-/** Server only ever reads gift-wrap events. */
-export function isGiftWrap(ev: NostrEvent): boolean {
-  return ev.kind === GIFT_WRAP_KIND
 }
 
 export type PageDecision = { done: true } | { done: false; until: number }

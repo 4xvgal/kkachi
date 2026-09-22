@@ -53,6 +53,21 @@ export type NostrEvent = {
  */
 export type PushMessage = string
 
+/**
+ * Wire-shape check for a `kinds` array: non-empty, every entry a positive
+ * integer, no duplicates. Whitelist membership is the server's call (env),
+ * not checked here.
+ */
+export function isKinds(value: unknown): value is number[] {
+  if (!Array.isArray(value) || value.length === 0) return false
+  const seen = new Set<number>()
+  for (const kind of value) {
+    if (!Number.isInteger(kind) || kind <= 0 || seen.has(kind)) return false
+    seen.add(kind)
+  }
+  return true
+}
+
 /** Max encoded byte length of a registered push message (push size / abuse gate). */
 export const MAX_PUSH_MESSAGE_BYTES = 128
 
@@ -61,9 +76,15 @@ export function isPushMessage(value: unknown): value is PushMessage {
   return new TextEncoder().encode(value).byteLength <= MAX_PUSH_MESSAGE_BYTES
 }
 
-/** Client registration filter. Always exactly one kind and one inbox. */
+/**
+ * Client registration filter. One or more kinds and one inbox — `#p` is an
+ * opaque, client-chosen pubkey (real, ephemeral, or derived); the server only
+ * checks signer == `#p`. Whether a kind is subscribable is the server's
+ * ALLOWED_KINDS whitelist call, enforced at registration. Backward compatible:
+ * `kinds: [1059]` remains valid.
+ */
 export type Filter = {
-  kinds: [typeof GIFT_WRAP_KIND]
+  kinds: number[]
   '#p': [InboxPub]
 }
 
@@ -134,16 +155,22 @@ export function isAllowedRelayUrl(value: unknown): value is string {
  */
 export type PushPayload = { v: typeof PROTOCOL_VERSION; m?: PushMessage }
 
-export function buildFilter(inboxPub: InboxPub): Filter {
-  return { kinds: [GIFT_WRAP_KIND], '#p': [inboxPub] }
+export function buildFilter(
+  inboxPub: InboxPub,
+  kinds: readonly number[] = [GIFT_WRAP_KIND],
+): Filter {
+  if (!isKinds(kinds)) {
+    throw new TypeError('buildFilter: kinds must be a non-empty array of positive unique integers')
+  }
+  return { kinds: [...kinds], '#p': [inboxPub] }
 }
 
 export function buildSubscribeReq(
   inboxPub: InboxPub,
   push: PushMaterial,
-  opts?: { relays?: string[]; message?: PushMessage },
+  opts?: { relays?: string[]; message?: PushMessage; kinds?: number[] },
 ): SubscribeReq {
-  const req: SubscribeReq = { filter: buildFilter(inboxPub), push }
+  const req: SubscribeReq = { filter: buildFilter(inboxPub, opts?.kinds), push }
   if (opts?.relays && opts.relays.length > 0) req.relays = opts.relays
   if (opts?.message !== undefined) req.message = opts.message
   return req
@@ -206,7 +233,7 @@ export function isSubscribeReq(value: unknown): value is SubscribeReq {
   const f = filter as Record<string, unknown>
   const kinds = f.kinds
   const p = f['#p']
-  const kindsOk = Array.isArray(kinds) && kinds.length === 1 && kinds[0] === GIFT_WRAP_KIND
+  const kindsOk = isKinds(kinds)
   const pOk = Array.isArray(p) && p.length === 1 && isInboxPub(p[0])
   if (!kindsOk || !pOk || !isPushMaterial(v.push)) return false
   if (v.message !== undefined && !isPushMessage(v.message)) return false

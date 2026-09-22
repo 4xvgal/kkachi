@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { finalizeEvent, verifyEvent } from 'nostr-tools'
-import { createInboxSigner, nip98Header, sha256Hex, subscribe } from '../src/register.ts'
+import { createInboxSigner, getSubscription, nip98Header, sha256Hex, subscribe } from '../src/register.ts'
 import { deriveInboxPub, deriveInboxSecret, deriveLabelSalt, labelToken } from '../src/inbox-key.ts'
 import { HTTP_AUTH_KIND, isInboxPub, type PushMaterial } from '../src/protocol.ts'
 
@@ -141,6 +141,31 @@ describe('subscribe retry/timeout', () => {
         subscribe('https://srv', signer, PUSH, { retries: 2, timeoutMs: 1000 }),
       ).rejects.toThrow()
       expect(calls).toBe(2)
+    } finally {
+      restore()
+    }
+  })
+
+  test('GETs /push/subscription with a signed NIP-98 GET header', async () => {
+    const signer = await createInboxSigner(seed, '2026-09')
+    let seen: { url?: string; method?: string; auth?: string } = {}
+    const restore = stubFetch((async (url: string, init: RequestInit) => {
+      seen = {
+        url,
+        method: init.method,
+        auth: (init.headers as Record<string, string>).authorization,
+      }
+      return new Response(JSON.stringify({ filter: { kinds: [1059], '#p': [signer.inboxPub] } }), {
+        status: 200,
+      })
+    }) as unknown as typeof fetch)
+
+    try {
+      const res = await getSubscription('https://srv', signer)
+      expect(res.status).toBe(200)
+      expect(seen.url).toBe('https://srv/push/subscription')
+      expect(seen.method).toBe('GET')
+      expect(seen.auth?.startsWith('Nostr ')).toBe(true)
     } finally {
       restore()
     }

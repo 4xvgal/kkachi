@@ -45,6 +45,8 @@ export type SubscribeOptions = RequestOptions & {
    * pass plaintext, or a `hashLabel(salt, text)` token for obfuscation.
    */
   message?: PushMessage
+  /** Event kinds to notify on. Server ALLOWED_KINDS whitelist applies. Default [1059]. */
+  kinds?: number[]
 }
 
 export async function createInboxSigner(seed: Uint8Array, epoch: string): Promise<InboxSigner> {
@@ -95,16 +97,17 @@ function requestSignal(timeoutMs: number, external?: AbortSignal): AbortSignal {
 }
 
 /**
- * POST with per-attempt timeout and retry.
+ * Request with per-attempt timeout and retry.
  *
- * The NIP-98 header is rebuilt on every attempt because its signed `created_at`
- * must stay inside the server's freshness window; replaying a stale header
- * would 401. Only network/abort failures are retried — any HTTP response is
- * returned to the caller, since 429/503 are server decisions, not transport
- * errors.
+ * The NIP-98 header is rebuilt on every attempt (via the `sign` closure)
+ * because its signed `created_at` must stay inside the server's freshness
+ * window; replaying a stale header would 401. Only network/abort failures are
+ * retried — any HTTP response is returned to the caller, since 429/503 are
+ * server decisions, not transport errors.
  */
-async function signedPost(
+async function signedRequest(
   url: string,
+  method: string,
   body: string | undefined,
   sign: () => Promise<string>,
   opts: RequestOptions = {},
@@ -120,7 +123,7 @@ async function signedPost(
       const headers: Record<string, string> = { authorization }
       if (body !== undefined) headers['content-type'] = 'application/json'
       return await fetch(url, {
-        method: 'POST',
+        method,
         headers,
         body,
         signal: requestSignal(timeoutMs, opts.signal),
@@ -131,6 +134,15 @@ async function signedPost(
   }
 
   throw lastError ?? new Error('kkachi: request failed')
+}
+
+async function signedPost(
+  url: string,
+  body: string | undefined,
+  sign: () => Promise<string>,
+  opts: RequestOptions = {},
+): Promise<Response> {
+  return signedRequest(url, 'POST', body, sign, opts)
 }
 
 export async function subscribe(
@@ -144,6 +156,7 @@ export async function subscribe(
     buildSubscribeReq(signer.inboxPub, push, {
       relays: opts?.relays,
       message: opts?.message,
+      kinds: opts?.kinds,
     }),
   )
   return signedPost(url, body, () => nip98Header(signer, url, 'POST', body), opts)
@@ -156,4 +169,18 @@ export async function unsubscribe(
 ): Promise<Response> {
   const url = join(baseUrl, '/push/unsubscribe')
   return signedPost(url, undefined, () => nip98Header(signer, url, 'POST'), opts)
+}
+
+/**
+ * Fetch the signer's current subscription (filter, push, relays, message).
+ * 404 when none. NIP-98 GET auth. For multi-device reconciliation: a device
+ * that lost its local copy can restore the same subscription.
+ */
+export async function getSubscription(
+  baseUrl: string,
+  signer: InboxSigner,
+  opts?: RequestOptions,
+): Promise<Response> {
+  const url = join(baseUrl, '/push/subscription')
+  return signedRequest(url, 'GET', undefined, () => nip98Header(signer, url, 'GET'), opts)
 }

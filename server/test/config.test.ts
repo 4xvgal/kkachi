@@ -45,5 +45,12 @@ describe('loadConfig (.env driven)', () => {
     expect(c.maxSubs).toBe(10_000)
     expect(c.databaseUrl).toBeUndefined()
     expect(c.corsOrigins).toEqual([])
+    expect(c.allowedKinds).toEqual([1059])
+  })
+
+  test('parses ALLOWED_KINDS, drops garbage, falls back to 1059 when empty', () => {
+    expect(loadConfig({ ALLOWED_KINDS: '1, 7, 1059, 1' }).allowedKinds).toEqual([1, 7, 1059])
+    expect(loadConfig({ ALLOWED_KINDS: 'x, -3, 0' }).allowedKinds).toEqual([1059])
+    expect(loadConfig({ ALLOWED_KINDS: '' }).allowedKinds).toEqual([1059])
   })
 })
