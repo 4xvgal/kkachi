@@ -33,6 +33,7 @@ function relayConfig(): Config {
     pollLookbackSec: 2 * 24 * 60 * 60 + 3600,
     pollLimit: 500,
     pollMaxPages: 10,
+    pollMaxEvents: 5000,
     relayTimeoutMs: 10_000,
     maxPTags: 10,
     authMaxSkewSec: 60,

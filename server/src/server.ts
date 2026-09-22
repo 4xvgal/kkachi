@@ -207,6 +207,8 @@ export async function startServer(config: Config) {
   const store = await createStore(config.databaseUrl)
   const relayClient = createRelayClient(undefined, {
     timeoutMs: config.relayTimeoutMs,
+    maxPages: config.pollMaxPages,
+    maxEvents: config.pollMaxEvents,
     onRelayError: (relay, err) =>
       console.warn(`[relay] ${relay}:`, err instanceof Error ? err.message : err),
   })
