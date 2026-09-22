@@ -14,6 +14,7 @@ import {
   sha256Hex,
   type InboxPub,
   type PushMaterial,
+  type PushMessage,
 } from './protocol.ts'
 
 export { sha256Hex } from './protocol.ts'
@@ -34,6 +35,16 @@ export type RequestOptions = {
   retries?: number
   /** Caller abort signal, combined with the timeout. */
   signal?: AbortSignal
+}
+
+export type SubscribeOptions = RequestOptions & {
+  /** Inbox relays to watch (NIP-17 kind:10050). Defaults to the server's global set. */
+  relays?: string[]
+  /**
+   * Push message registered with this subscription. Opaque to the server:
+   * pass plaintext, or a `hashLabel(salt, text)` token for obfuscation.
+   */
+  message?: PushMessage
 }
 
 export async function createInboxSigner(seed: Uint8Array, epoch: string): Promise<InboxSigner> {
@@ -126,11 +137,15 @@ export async function subscribe(
   baseUrl: string,
   signer: InboxSigner,
   push: PushMaterial,
-  relays?: string[],
-  opts?: RequestOptions,
+  opts?: SubscribeOptions,
 ): Promise<Response> {
   const url = join(baseUrl, '/push/subscribe')
-  const body = JSON.stringify(buildSubscribeReq(signer.inboxPub, push, relays))
+  const body = JSON.stringify(
+    buildSubscribeReq(signer.inboxPub, push, {
+      relays: opts?.relays,
+      message: opts?.message,
+    }),
+  )
   return signedPost(url, body, () => nip98Header(signer, url, 'POST', body), opts)
 }
 

@@ -17,7 +17,7 @@
     "test:smoke": "bun run server/scripts/smoke.ts",
     "test:docker": "bash scripts/docker-test.sh",
     "test:postgres": "bash scripts/postgres-test.sh",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.dom.json",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.dom.json && tsc -p examples/pwa/tsconfig.json && tsc -p examples/pwa/tsconfig.sw.json",
     "typecheck:dom": "tsc -p tsconfig.dom.json",
     "server": "bun run server/src/server.ts",
     "pwa": "bun run examples/pwa/dev.ts",

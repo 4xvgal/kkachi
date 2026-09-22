@@ -148,12 +148,24 @@ describe('poller.tick (fixed lookback window)', () => {
     const res = await poller.tick()
     expect(res.pushed).toBe(2)
     expect(res.targets).toBe(2)
-    expect(calls.every((c) => c.payload === JSON.stringify({ v: 1 }))).toBe(true)
+    expect(calls.every((c) => c.payload === JSON.stringify({ v: 2 }))).toBe(true)
     expect(filters[0]!.kinds).toEqual([GIFT_WRAP_KIND])
     expect(filters[0]!.since).toBe(NOW_SEC - 2 * 24 * 60 * 60)
     expect(filters[0]!.until).toBe(NOW_SEC)
     expect(filters[0]!.limit).toBe(500)
     expect(Object.keys(filters[0]!)).not.toContain('#p')
+  })
+
+  test('pushes the subscriber-registered message verbatim', async () => {
+    const { store, poller, calls } = await setup({
+      subs: [{ inbox: INBOX_A }],
+      events: [ev('1', INBOX_A)],
+    })
+    // attach the registered message after setup (setup has no message field)
+    const sub = await store.getSub(INBOX_A)
+    if (sub) await store.upsertSub({ ...sub, message: '입출금' })
+    await poller.tick()
+    expect(calls.map((c) => c.payload)).toEqual([JSON.stringify({ v: 2, m: '입출금' })])
   })
 
   test('dedups seen events across ticks (no re-push)', async () => {
@@ -175,6 +187,7 @@ describe('poller.tick (fixed lookback window)', () => {
       inboxPub: INBOX_A,
       filter: { kinds: [GIFT_WRAP_KIND], '#p': [INBOX_A] },
       push: PUSH,
+      message: '입출금',
       createdAt: 0,
     })
     // Hostile relay ignores `since` and keeps returning an ancient event.
