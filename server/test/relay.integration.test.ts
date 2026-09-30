@@ -51,11 +51,15 @@ function relayConfig(): Config {
   }
 }
 
-async function publishGiftWrap(inbox: InboxPub, kind = GIFT_WRAP_KIND): Promise<string> {
+async function publishGiftWrap(
+  inbox: InboxPub,
+  kind = GIFT_WRAP_KIND,
+  createdAt = Math.floor(Date.now() / 1000),
+): Promise<string> {
   const event = finalizeEvent(
     {
       kind,
-      created_at: Math.floor(Date.now() / 1000),
+      created_at: createdAt,
       tags: [['p', inbox]],
       content: '',
     },
@@ -135,6 +139,66 @@ run('carries the subscriber-registered message in the push payload', async () =>
 
   expect(res.pushed).toBe(1)
   expect(payloads).toEqual([JSON.stringify(buildPushPayload('입출금'))])
+})
+
+run('poller pushes a gift-wrap backdated to the 2d+6h window edge', async () => {
+  const lookback = 2 * 24 * 60 * 60 + 6 * 3600
+  const seed = new Uint8Array(32).map((_, i) => (i * 13 + 11) % 256)
+  const inbox = await deriveInboxPub(seed, '2026-09')
+
+  const store = createMemoryStore()
+  await store.upsertSub({
+    inboxPub: inbox,
+    filter: { kinds: [GIFT_WRAP_KIND], '#p': [inbox] },
+    push: PUSH,
+    createdAt: 0,
+  })
+
+  const payloads: string[] = []
+  const poller = createPoller({
+    store,
+    relayClient: createRelayClient(),
+    sender: async (_push, payload) => {
+      payloads.push(payload)
+    },
+    config: { ...relayConfig(), pollLookbackSec: lookback },
+  })
+
+  await publishGiftWrap(inbox, GIFT_WRAP_KIND, Math.floor(Date.now() / 1000) - lookback)
+  const res = await poller.tick()
+
+  expect(res.pushed).toBe(1)
+  expect(payloads).toHaveLength(1)
+})
+
+run('poller ignores a gift-wrap 1s beyond the 2d+6h window edge', async () => {
+  const lookback = 2 * 24 * 60 * 60 + 6 * 3600
+  const seed = new Uint8Array(32).map((_, i) => (i * 17 + 13) % 256)
+  const inbox = await deriveInboxPub(seed, '2026-09')
+
+  const store = createMemoryStore()
+  await store.upsertSub({
+    inboxPub: inbox,
+    filter: { kinds: [GIFT_WRAP_KIND], '#p': [inbox] },
+    push: PUSH,
+    createdAt: 0,
+  })
+
+  const payloads: string[] = []
+  const poller = createPoller({
+    store,
+    relayClient: createRelayClient(),
+    sender: async (_push, payload) => {
+      payloads.push(payload)
+    },
+    config: { ...relayConfig(), pollLookbackSec: lookback },
+  })
+
+  await publishGiftWrap(inbox, GIFT_WRAP_KIND, Math.floor(Date.now() / 1000) - lookback - 1)
+  const res = await poller.tick()
+
+  expect(res.pushed).toBe(0)
+  expect(payloads).toHaveLength(0)
 })
 
 run('poller ignores a gift-wrap addressed to a non-active inbox', async () => {

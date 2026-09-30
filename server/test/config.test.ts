@@ -39,7 +39,7 @@ describe('loadConfig (.env driven)', () => {
     expect(c.publicUrl).toBeUndefined()
     expect(c.relays).toEqual(['ws://localhost:4444/relay'])
     expect(c.relayTimeoutMs).toBe(10_000)
-    expect(c.pollLookbackSec).toBe(2 * 24 * 60 * 60 + 3600)
+    expect(c.pollLookbackSec).toBe(2 * 24 * 60 * 60 + 6 * 3600)
     expect(c.pollLimit).toBe(500)
     expect(c.pollMaxPages).toBe(10)
     expect(c.maxSubs).toBe(10_000)

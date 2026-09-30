@@ -1,25 +1,30 @@
 /**
- * [shell] Firehose poller.
+ * [shell] Batched per-inbox watch poller.
  *
- * NIP-59/17 randomize gift-wrap `created_at` up to 2 days into the past, so a
- * `since=cursor` incremental sync would miss late-arriving events. Instead every
- * tick rescans a fixed lookback window and dedups by event id via the Store.
- * The Store also retains seen ids for the whole window, keyed by *observation
- * time* (not the event's randomized/forged created_at), so a hostile relay
- * cannot make retention flap and re-push.
+ * Gift-wraps randomize created_at up to 2 days back, so every tick rescans a
+ * fixed lookback window with observation-time dedup. Watches are batched
+ * NIP-01 `#p` queries (100/REQ), not a kind-wise firehose: firehose scans hit
+ * created_at pagination tails on busy relays, and some relays skip deep
+ * since-windows. Per-inbox volume is small, so backdated events stay reachable.
  */
 
 import {
   buildPushPayload,
   isAllowedRelayUrl,
   type InboxPub,
+  type NostrEvent,
 } from 'kkachi/protocol'
 import { aggregate, jitter, matchInbox, withinMaxPTags } from './core.ts'
 import { createRateLimiter, type RateLimiter } from './rate-limit.ts'
 import type { Config } from './config.ts'
 import type { Store, StoredSub } from './store.ts'
 import { PushGoneError, type PushSender } from './push-sender.ts'
-import type { RelayClient } from './relay-client.ts'
+import type { FirehoseFilter, RelayClient } from './relay-client.ts'
+
+/** Inboxes per NIP-01 `#p` REQ. Low enough to stay under relay list caps. */
+export const WATCH_BATCH_SIZE = 100
+/** In-flight relay queries per tick; bounds load on relays and self. */
+const COLLECT_WORKERS = 4
 
 export type PollerDeps = {
   store: Store
@@ -79,6 +84,38 @@ export function createPoller(deps: PollerDeps) {
     return [...set]
   }
 
+  /** Group active inboxes into `#p` batches; 100 stays under relay list caps. */
+  function watchBatches(subs: StoredSub[], batchSize: number = WATCH_BATCH_SIZE): InboxPub[][] {
+    const inboxes = subs.map((s) => s.inboxPub)
+    const out: InboxPub[][] = []
+    for (let i = 0; i < inboxes.length; i += batchSize) {
+      out.push(inboxes.slice(i, i + batchSize))
+    }
+    return out
+  }
+
+  /** Query every relay × batch, merged by id; 4 in flight so 10k subs don't slam relays. */
+  async function collect(
+    relays: string[],
+    batches: InboxPub[][],
+    filter: Omit<FirehoseFilter, '#p'>,
+  ): Promise<Map<string, NostrEvent>> {
+    const byId = new Map<string, NostrEvent>()
+    const workerCount = Math.min(COLLECT_WORKERS, batches.length)
+    let next = 0
+    await Promise.all(
+      Array.from({ length: workerCount }, async () => {
+        for (;;) {
+          const batch = batches[next++]
+          if (batch === undefined) return
+          const found = await relayClient.querySync(relays, { ...filter, '#p': batch })
+          for (const ev of found) byId.set(ev.id, ev)
+        }
+      }),
+    )
+    return byId
+  }
+
   async function tick(): Promise<TickResult> {
     const subs = await store.listSubs()
     if (subs.length === 0) return { scanned: 0, fresh: 0, targets: 0, pushed: 0, rateLimited: 0 }
@@ -88,15 +125,14 @@ export function createPoller(deps: PollerDeps) {
     const nowSec = Math.floor(now() / 1000)
     const since = nowSec - config.pollLookbackSec
 
-    // Per-relay pagination and policy live in the relay client. Query the
-    // whole whitelist in one REQ; the local pass re-checks kinds because a
-    // hostile relay may ignore the filter.
-    const events = await relayClient.querySync(relaysFor(subs), {
+    // One REQ per relay per batch; merge locally (a hostile relay may duplicate).
+    const collected = await collect(relaysFor(subs), watchBatches(subs), {
       kinds: [...config.allowedKinds],
       since,
       until: nowSec,
       limit: config.pollLimit,
     })
+    const events = [...collected.values()]
     const usable = events.filter(
       (ev) => config.allowedKinds.includes(ev.kind) && withinMaxPTags(ev, config.maxPTags),
     )

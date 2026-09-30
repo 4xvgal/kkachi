@@ -10,7 +10,7 @@
 
 1. **클라이언트가 진실.** 자금 수령은 relay/push와 무관. 클라가 `giftwrap-cursor`로 앱 열 때 따라잡는다. 서버 push는 *깨우기 힌트*일 뿐, 누락돼도 손실 없음.
 2. **서버는 눈머는(blind).** 실명 npub 저장 X, IP 로그 X, 내용 못 봄(이미 NIP-59/44 E2E).
-3. **relay는 적대적.** per-user `#p` REQ 금지(유저 열거됨). 오직 firehose-kind:1059 **batch poll**.
+3. **relay는 적대적.** 배치 `#p` watch poll(epoch inboxPub 100개/REQ 묶음) — 개별 `#p` REQ 팬아웃은 피하되, 화이어호스로는 백데이트(최대 2일) 이벤트가 created_at 정렬 꼬리/릴레이 since 제한에 걸려 미스(실측: nos.lol 2만+건, snort.social since 무시)됐음. watch 목록은 릴레이에 노출되지만 epoch 키로 완화. **verify + dedup + max_p_tags + rate limit**.
 4. **content-less + 집계 push.** payload `{v:1}`. window당 1건.
 5. **실시간은 클라가 담당.** 서버는 앱이 frozen/killed된 차가운 상태의 fallback만.
 
@@ -30,7 +30,7 @@
 
 | # | 위협 | 대응 |
 |---|---|---|
-| L1 | relay가 `#p` REQ로 유저 전원 열거 | **firehose poll** — `#p` 안 보냄 |
+| L1 | relay가 `#p` REQ로 유저 전원 열거 | **배치 `#p` watch** — 100개/REQ 묶음, epoch 키 회전으로 노출 완화 (단일 유저 리스트보다 배치 노출, 실측에서 화이어호스 미스 대비 우선) |
 | L2/L11/L17 | 서버 IP/위치 노출 | 엣지/Tor 뒤, 다중 relay. (완전 은닉 불가) |
 | L3/L5 | `since`/churn으로 활동·성장 노출 | firehose + 랜덤 poll 시각 |
 | L4 | REQ id에 식별자 | id 랜덤 |

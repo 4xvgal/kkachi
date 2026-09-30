@@ -62,7 +62,7 @@ function ev(id: string, p: string, over: Partial<NostrEvent> = {}): NostrEvent {
   }
 }
 
-/** Relay double: honors since/until/limit so pagination is exercised. */
+/** Relay double: honors since/until/limit/#p so pagination is exercised. */
 function fakeRelay(events: NostrEvent[]): {
   relays: string[][]
   filters: FirehoseFilter[]
@@ -80,8 +80,10 @@ function fakeRelay(events: NostrEvent[]): {
         const since = filter.since
         const until = filter.until ?? Number.POSITIVE_INFINITY
         const limit = filter.limit ?? Number.POSITIVE_INFINITY
+        const watch = filter['#p']
         return events
           .filter((e) => e.created_at >= since && e.created_at <= until)
+          .filter((e) => !watch || e.tags.some((t) => t[0] === 'p' && watch.includes(t[1] ?? '')))
           .sort((a, b) => b.created_at - a.created_at)
           .slice(0, limit)
       },
@@ -154,7 +156,24 @@ describe('poller.tick (fixed lookback window)', () => {
     expect(filters[0]!.since).toBe(NOW_SEC - 2 * 24 * 60 * 60)
     expect(filters[0]!.until).toBe(NOW_SEC)
     expect(filters[0]!.limit).toBe(500)
-    expect(Object.keys(filters[0]!)).not.toContain('#p')
+    // Batched NIP-01 #p watch: both active inboxes in one REQ (single batch).
+    expect(filters[0]!['#p']).toEqual([INBOX_A, INBOX_B])
+  })
+
+  test('batches inbox watches: one REQ per 100 inboxes', async () => {
+    const subs = Array.from({ length: 250 }, (_, i) => ({
+      inbox: i.toString(16).padStart(2, '0').repeat(32) as InboxPub,
+    }))
+    const { poller, filters } = await setup({ subs, events: [] })
+    await poller.tick()
+    expect(filters).toHaveLength(3)
+    expect(filters[0]!['#p']).toHaveLength(100)
+    expect(filters[1]!['#p']).toHaveLength(100)
+    expect(filters[2]!['#p']).toHaveLength(50)
+    // One relay (default) × three batches; watches partition the inbox set.
+    const all = filters.flatMap((f) => f['#p'] ?? []).sort()
+    const expected = subs.map((s) => s.inbox).sort()
+    expect(all).toEqual(expected)
   })
 
   test('pushes the subscriber-registered message verbatim', async () => {
@@ -253,6 +272,32 @@ describe('poller.tick (fixed lookback window)', () => {
       expect(calls, c.name).toHaveLength(0)
       if (c.scanned !== undefined) expect(res.scanned).toBe(c.scanned)
     }
+  })
+
+  test('detects a gift-wrap backdated to the 2d+6h window edge', async () => {
+    const lookback = 2 * 24 * 60 * 60 + 6 * 3600
+    const { store, poller, calls, filters } = await setup({
+      subs: [{ inbox: INBOX_A }],
+      cfg: { pollLookbackSec: lookback },
+      // created_at == since: the >= boundary is inclusive
+      events: [ev('edge', INBOX_A, { created_at: NOW_SEC - lookback })],
+    })
+    await store.listSubs()
+    const res = await poller.tick()
+    expect(res.scanned).toBe(1)
+    expect(res.pushed).toBe(1)
+    expect(filters[0]!.since).toBe(NOW_SEC - lookback)
+  })
+
+  test('ignores a gift-wrap 1s beyond the 2d+6h window edge', async () => {
+    const lookback = 2 * 24 * 60 * 60 + 6 * 3600
+    const { poller, calls } = await setup({
+      subs: [{ inbox: INBOX_A }],
+      cfg: { pollLookbackSec: lookback },
+      events: [ev('beyond', INBOX_A, { created_at: NOW_SEC - lookback - 1 })],
+    })
+    await poller.tick()
+    expect(calls).toHaveLength(0)
   })
 
   const relayCases: Array<{

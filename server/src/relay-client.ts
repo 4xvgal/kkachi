@@ -1,10 +1,11 @@
 /**
- * [shell] Multi-relay firehose client: firehose-only (never `#p`, L1), per-relay
- * NIP-11 policy + pagination, isolated failures, merged/deduped results.
+ * [shell] Multi-relay watch client: batched `#p` queries (100 inbox/REQ),
+ * NIP-11 policy + pagination, isolated failures, merged/deduped.
+ * `#p` leaks the watched batch to relays (accepted — epoch keys rotate).
  */
 
 import { SimplePool, verifyEvent } from 'nostr-tools'
-import type { NostrEvent } from 'kkachi/protocol'
+import { isInboxPub, type NostrEvent } from 'kkachi/protocol'
 import { nextPage } from './core.ts'
 import { createRelayInfoCache, type RelayInfoCache } from './relay-info.ts'
 
@@ -13,6 +14,8 @@ export type FirehoseFilter = {
   since: number
   until?: number
   limit?: number
+  /** NIP-01 `#p` watch list. */
+  '#p'?: string[]
 }
 
 export type RelayClient = {
@@ -41,11 +44,14 @@ export type RelayClientOptions = {
 const DEFAULT_LIMIT = 500
 
 export function assertFirehose(filter: FirehoseFilter): void {
-  if (Object.prototype.hasOwnProperty.call(filter, '#p')) {
-    throw new Error('relay client refuses #p filters (firehose only)')
-  }
   if (!Array.isArray(filter.kinds) || filter.kinds.length === 0) {
     throw new Error('firehose filter requires kinds')
+  }
+  if (filter['#p'] !== undefined) {
+    if (!Array.isArray(filter['#p'])) throw new Error('#p filter must be an array')
+    for (const p of filter['#p']) {
+      if (!isInboxPub(p)) throw new Error('#p filter requires 64-hex pubkeys')
+    }
   }
 }
 

@@ -101,7 +101,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     databaseUrl: env.DATABASE_URL,
     pollBaseMs,
     pollSpreadMs,
-    pollLookbackSec: Number(env.POLL_LOOKBACK_SEC ?? TWO_DAYS_SEC + 3600),
+    pollLookbackSec: Number(env.POLL_LOOKBACK_SEC ?? TWO_DAYS_SEC + 6 * 3600),
     pollLimit: Number(env.POLL_LIMIT ?? 500),
     pollMaxPages: Number(env.POLL_MAX_PAGES ?? 10),
     pollMaxEvents: Number(env.POLL_MAX_EVENTS ?? 5000),

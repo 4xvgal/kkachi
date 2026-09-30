@@ -4,14 +4,14 @@ Blind Web Push server for Nostr gift-wrap (kind:1059): wakes a client when a
 gift-wrap for its inbox appears, even if the PWA is frozen or killed.
 
 - **Blind** — stores only an opaque, rotating `inboxPub`; no npub, no content, no IP logs.
-- **Hostile relays** — firehose poll only, never a per-user `#p` REQ; verify + dedup + `max_p_tags` + rate limits.
+- **Hostile relays** — batched NIP-01 `#p` watch polls (100 rotating inboxPub per REQ; the watch list is visible to relays, epoch keys mitigate); verify + dedup + `max_p_tags` + rate limits.
 - **Content-less push** — always `{"v":1}`.
 - **NIP-98 auth** — signer == filter `#p` == record key.
 - **Non-authoritative** — a missed push loses nothing; the client catches up on open.
 
 ```
 packages/push-client/   kkachi  — wire contract, inbox-key derivation, registration SDK
-server/                 kkachi-server       — HTTP API + firehose poller + web-push
+server/                 kkachi-server       — HTTP API + batched-#p watch poller + web-push
 ```
 
 ## Requirements

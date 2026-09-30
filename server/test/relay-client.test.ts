@@ -40,22 +40,25 @@ function fakePool(handler: (relay: string, filter: FirehoseFilter, opts: unknown
 const until = 1_000_000
 const filter: FirehoseFilter = { kinds: [1059], since: 0, until }
 
-describe('firehose guard (L1: no user enumeration)', () => {
-  test('accepts kinds+since; refuses #p and empty kinds', () => {
+describe('watch batch guard', () => {
+  test('accepts kinds+since and #p watch batches; refuses empty kinds and malformed #p', () => {
     expect(() => assertFirehose({ kinds: [1059], since: 0 })).not.toThrow()
+    expect(() => assertFirehose({ kinds: [1059], since: 0, '#p': ['a'.repeat(64)] })).not.toThrow()
     expect(() => assertFirehose({ kinds: [], since: 0 })).toThrow()
-    const leaky = { kinds: [1059], since: 0, '#p': ['a'.repeat(64)] } as unknown as FirehoseFilter
-    expect(() => assertFirehose(leaky)).toThrow(/#p/)
+    const badHex = { kinds: [1059], since: 0, '#p': ['not-hex'] } as unknown as FirehoseFilter
+    expect(() => assertFirehose(badHex)).toThrow(/#p/)
+    const badArray = { kinds: [1059], since: 0, '#p': 'a'.repeat(64) } as unknown as FirehoseFilter
+    expect(() => assertFirehose(badArray)).toThrow(/#p/)
   })
 
-  test('refuses #p without touching the pool', async () => {
+  test('rejects malformed #p without touching the pool', async () => {
     let called = false
     const { pool } = fakePool(() => {
       called = true
       return []
     })
     const client = createRelayClient(pool as never)
-    const leaky = { ...filter, '#p': ['a'.repeat(64)] } as unknown as FirehoseFilter
+    const leaky = { ...filter, '#p': ['not-hex'] } as unknown as FirehoseFilter
     await expect(client.querySync(['ws://r'], leaky)).rejects.toThrow(/#p/)
     expect(called).toBe(false)
   })
